@@ -1,0 +1,16 @@
+{
+  "name": "effectual",
+  "packageManager": "yarn@3.8.2",
+  "license": "MIT",
+  "workspaces": [
+    "core"
+  ],
+  "r": {
+    "build": [
+      "r:core:build"
+    ],
+    "watch": [
+      "r:core:watch"
+    ]
+  }
+}

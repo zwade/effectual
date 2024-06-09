@@ -1,0 +1,13 @@
+{
+    "name": "@effectualjs/core",
+    "version": "1.0.0",
+    "type": "module",
+    "main": "dist/index.mjs",
+    "r": {
+        "core:build": "tsc",
+        "core:watch": "tsc -w"
+    },
+    "devDependencies": {
+        "typescript": "^5.4.5"
+    }
+}

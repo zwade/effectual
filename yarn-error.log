@@ -1,0 +1,31 @@
+Arguments: 
+  /usr/local/bin/node /usr/local/bin/yarn set version yarn-error.log
+
+PATH: 
+  /opt/homebrew/opt/ruby/bin:/opt/homebrew/lib/ruby/gems/3.2.0/bin:/Users/zacharywade/google-cloud-sdk/bin:/opt/homebrew/Caskroom/miniconda/base/envs/nuvo/bin:/opt/homebrew/Caskroom/miniconda/base/condabin:/usr/local/bin:/usr/local/sbin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/munki:/opt/X11/bin:/Applications/Wireshark.app/Contents/MacOS:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/Users/zacharywade/.cargo/bin:/opt/homebrew/bin:/Users/zacharywade/.yarn/bin:/Users/zacharywade/bin:/Users/zacharywade/Documents/projects/piqued/rust/piqued/target/debug
+
+Yarn version: 
+  1.22.18
+
+Node version: 
+  20.11.0
+
+Platform: 
+  darwin arm64
+
+Trace: 
+  Error: Release not found: yarn-error.log
+      at /usr/local/lib/node_modules/yarn/lib/cli.js:86351:17
+      at Generator.next (<anonymous>)
+      at step (/usr/local/lib/node_modules/yarn/lib/cli.js:310:30)
+      at /usr/local/lib/node_modules/yarn/lib/cli.js:321:13
+      at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+npm manifest: 
+  No manifest
+
+yarn manifest: 
+  No manifest
+
+Lockfile: 
+  No lockfile
