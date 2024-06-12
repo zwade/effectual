@@ -6,5 +6,11 @@
         "target": "ESNext",
         "declaration": true,
         "sourceMap": true,
+        "lib": [
+            "esnext.decorators",
+            "ES2022",
+            "DOM"
+        ],
+        "moduleResolution": "NodeNext",
     }
 }
