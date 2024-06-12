@@ -6,13 +6,16 @@
     "types": "dist/index.d.mts",
     "dependencies": {
         "@effectualjs/core": "workspace:*",
-        "@effectualjs/reconciler": "workspace:*"
+        "@effectualjs/reconciler": "workspace:*",
+        "@types/jest": "^29.5.12"
     },
     "r": {
         "tests:build": "tsc",
-        "tests:watch": "tsc -w"
+        "tests:watch": "tsc -w",
+        "tests:run": "node --experimental-vm-modules $(yarn bin jest) dist"
     },
     "devDependencies": {
+        "jest": "^29.7.0",
         "typescript": "^5.4.5"
     }
 }

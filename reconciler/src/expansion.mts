@@ -40,6 +40,11 @@ interface Context {
     lexicalScopeStack: LexicalScope[];
 }
 
+/**
+ * Given a newly invoked source element and a previous expansion, determine whether
+ * the new element would produce the same output as the previous element by checking the
+ * memo state. (A comparison of the props and the element itself)
+*/
 const sourceElementIsUnchanged = (element: EffectualSourceElement, previousRoot: ExpansionSubroot) => {
     if (element.element !== previousRoot.element.element) {
         return false;
@@ -48,12 +53,19 @@ const sourceElementIsUnchanged = (element: EffectualSourceElement, previousRoot:
     return memoItemsAreEqual(memoizeItem(element.props), previousRoot.memoKey);
 };
 
+/**
+ * Find a key property on an element if it exists
+ */
 const getKey = (element: EffectualElement): string | undefined => {
     if (element instanceof Object && !Array.isArray(element) && element.kind !== "fragment" && element.props?.key) {
         return "" + element.props.key;
     }
 };
 
+/**
+ * Given an arbitrarily deep tree of arrays and fragments, flatten it into a single list
+ * of singelton elements (with optional associated keys).
+ */
 const flattenElements = (entry: EffectualElement[], acc: FlatElement[] = [], currentPosition = 0) => {
     for (let i = 0; i < entry.length; i++) {
         const element = entry[i];
@@ -80,6 +92,10 @@ const flattenElements = (entry: EffectualElement[], acc: FlatElement[] = [], cur
     return acc;
 };
 
+/**
+ * Invokes `flattenElements` on a single element (casing on whether it's)
+ * a singleton or not
+ */
 const flattenElement = (element: EffectualElement): FlatElement[] => {
     if (Array.isArray(element)) {
         return flattenElements(element);
@@ -92,9 +108,19 @@ const flattenElement = (element: EffectualElement): FlatElement[] => {
     return [[getKey(element) ?? "0", element]];
 };
 
+/**
+ * The clean co-recursive component to the expansion function. This function starts it's
+ * entrypoint at the location of a custom element that is unchanged from the previous expansion.
+ * This function will then load the cached expansion tree and recurse down it, preserving all state
+ * until it encounters an element that's been explicitly marked as dirty. Once found, it will
+ * co-recurse back to the dirty expansion function.
+ *
+ * Note, for slot expansion we use the dirtyness state of the lexical scope under which the slot
+ * was defined. This is because that scope will determine whether the associated children could
+ * possible have been changed.
+ */
 const expandClean = (element: ExpansionEntry, context: Context): ExpansionEntry => {
     if (__DEV__) {
-        console.log(__LOG__);
         __LOG__("debug", "Expand clean", element);
         __TRIGGER__("expand_clean", element, context);
     }
@@ -139,6 +165,17 @@ const expandClean = (element: ExpansionEntry, context: Context): ExpansionEntry 
     return unreachable(element);
 };
 
+/**
+ * The dirty co-recursive component to the expansion function, and the main default entrypoint
+ * for expansion itself.
+ *
+ * This method takes a Singleton element and then compares it to the previously rendered node
+ * it corresponds to. If it's able to determine that these are unchanged, and if the element
+ * has not been marked as dirty, then it will switch it's execution to the clean path.
+ *
+ * If the element is dirty, then it will re-invoke the element to create a new subtree, and
+ * will attempt to reconcile those subtrees with the previous expansion (using the key property).
+ */
 const expandDirty = (currentRoot: SingletonElement, context: Context): ExpansionEntry => {
     if (__DEV__) {
         __LOG__("debug", "Expand", currentRoot, context.previousRoot);
@@ -264,6 +301,10 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
     return unreachable(currentRoot);
 };
 
+/**
+ * Expand takes an invocation of a custom component (and optionally a previously expanded subtree)
+ * and returns a new expansion tree, reusing the previous tree wherever possible.
+ */
 export const expand = (currentRoot: EffectualElement, previousRoot?: ExpansionEntry): ExpansionEntry => {
     if (typeof currentRoot !== "object" || Array.isArray(currentRoot) || currentRoot?.kind !== "custom") {
         throw new Error("Root element must be a custom element");

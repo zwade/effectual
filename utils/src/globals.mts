@@ -20,7 +20,7 @@ declare global {
     var __ASSERT__: (condition: boolean, message: string) => void;
 
     var __effectual__: {
-        hooks: Map<string, Set<() => void>>;
+        hooks: Map<string, Set<(...args: any[]) => void>>;
     };
 
     var __TRIGGER__: (hook: string, ...args: any[]) => void;
@@ -46,11 +46,11 @@ if (__DEV__) {
         hooks: new Map(),
     };
 
-    globalThis.__TRIGGER__ = (hook: string) => {
+    globalThis.__TRIGGER__ = (hook: string, ...args) => {
         const callbacks = globalThis.__effectual__.hooks.get(hook);
         if (callbacks !== undefined) {
             for (const callback of callbacks) {
-                callback();
+                callback(...args);
             }
         }
     };

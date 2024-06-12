@@ -9,6 +9,13 @@ const memoizeSingleObject = (value: unknown) => {
     return value as Primitive;
 };
 
+/**
+ * Given a set of props, we compute a memoization array that
+ * lists out key value pairs for the purpose of memoization.
+ *
+ * In the event that the values are objects, we cache them
+ * in weak references to avoid memory leaks.
+ */
 export const memoizeItem = (props?: Record<string, unknown>) => {
     const cacheObject: MemoEntry = [];
     if (props === undefined) {
@@ -24,6 +31,10 @@ export const memoizeItem = (props?: Record<string, unknown>) => {
     return cacheObject;
 };
 
+/**
+ * Compares two memoization sets and returns whether they are equivalent
+ * or not. For objects, equivalence is determined by reference equality.
+ */
 export const memoItemsAreEqual = (a: MemoEntry, b: MemoEntry) => {
     if (a.length !== b.length) {
         return false;

@@ -2,6 +2,10 @@ import { unreachable } from "@effectualjs/utils";
 
 import { ExpansionEntry } from "./expansion.mjs";
 
+/**
+ * A helper function to render the expansion result as a string.
+ * This will not be used beyond early debugging.
+ */
 export const render = (entry: ExpansionEntry, indent = 0): string => {
     if (entry.kind === "omit") {
         return "";
