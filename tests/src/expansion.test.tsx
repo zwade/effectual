@@ -1,7 +1,7 @@
-import { EffectualSourceElement, F, expand, render } from "@effectualjs/core";
-import { A, C, D } from "./fixtures.js";
-
+import { EffectualSourceElement, expand, F, render } from "@effectualjs/core";
 import { jest } from "@jest/globals";
+
+import { A, C, D } from "./fixtures.js";
 
 describe("Rendering Tests", () => {
     test("Test Single Element Render", () => {
@@ -9,11 +9,12 @@ describe("Rendering Tests", () => {
         const rendered = render(expanded);
 
         expect(rendered).toBe(
-`<span>
+            `<span>
     Test:
     hi
 </span>
-`);
+`,
+        );
     });
 
     test("Test Deeply Nested Render", () => {
@@ -21,7 +22,7 @@ describe("Rendering Tests", () => {
         const rendered = render(expanded);
 
         expect(rendered).toBe(
-`<div>
+            `<div>
     <span>
         <b>
             Number 1
@@ -42,14 +43,15 @@ describe("Rendering Tests", () => {
         </span>
     </span>
 </div>
-`);
+`,
+        );
     });
-})
+});
 
 describe("Expansion Test", () => {
     const expansionCb = jest.fn((root: EffectualSourceElement, previousRoot: any) => {
         // pass;
-    })
+    });
 
     beforeEach(() => {
         expansionCb.mockClear();
@@ -58,7 +60,7 @@ describe("Expansion Test", () => {
 
     afterEach(() => {
         __UNHOOK__("expansion_new", expansionCb);
-    })
+    });
 
     test("Single Element Single Execution", () => {
         expand(<D comment="hi" />);
@@ -66,7 +68,11 @@ describe("Expansion Test", () => {
     });
 
     test("Multiple Element Multiple Execution", () => {
-        expand(<C comment="test"><D comment="test" /></C>);
+        expand(
+            <C comment="test">
+                <D comment="test" />
+            </C>,
+        );
         expect(expansionCb).toHaveBeenCalledTimes(2);
     });
 
@@ -82,5 +88,5 @@ describe("Expansion Test", () => {
 
         expand(<A />, firstPass);
         expect(expansionCb).toHaveBeenCalledTimes(3);
-    })
+    });
 });

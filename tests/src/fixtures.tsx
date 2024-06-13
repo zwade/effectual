@@ -63,15 +63,15 @@ export const A = (props: AProps) => {
 };
 
 const noop = (strings: TemplateStringsArray, ...values: any[]) => {
-    console.log(strings, values)
-    return (strings
-        .slice(0, -1)
-        .map((str, i) => str + (values[i] || ""))
-        .join("")
-        + strings[strings.length - 1]
+    console.log(strings, values);
+    return (
+        strings
+            .slice(0, -1)
+            .map((str, i) => str + (values[i] || ""))
+            .join("") + strings[strings.length - 1]
     );
-}
+};
 
 export const trim = (strings: TemplateStringsArray, ...values: any[]) => {
     return noop(strings, ...values).trim();
-}
+};

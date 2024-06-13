@@ -25,7 +25,11 @@ export const render = (entry: ExpansionEntry, indent = 0): string => {
 
     if (entry.kind === "dom-element") {
         const children = entry.children.map(([_key, value]) => render(value, indent + 1)).join("");
-        let result = "    ".repeat(indent) + `<${entry.element.tag}>\n`;
+        const props = Object.entries(entry.element.props ?? {})
+            .map(([key, value]) => `${key}="${value}"`)
+            .join(" ");
+
+        let result = "    ".repeat(indent) + `<${entry.element.tag} ${props}>\n`;
         result += children;
         result += "    ".repeat(indent) + `</${entry.element.tag}>\n`;
 
