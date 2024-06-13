@@ -1,14 +1,17 @@
 import { F } from "@effectualjs/core";
 
+import { Blog } from "./Blog.js";
+import { Faq } from "./Faq.js";
+import { Header } from "./Header.js";
+
 export interface Props {}
 
 export const App = (props: Props) => {
     return (
         <div style="font-family: sans-serif;">
-            <h1>Effectual Web Development</h1>
-            <hr />
-            This site was made with <a href="https://github.com/zwade/effectual">Effectual JS</a>, an educational (and
-            functional!) web development framework.
+            <Header />
+            <Blog />
+            <Faq />
         </div>
     );
 };

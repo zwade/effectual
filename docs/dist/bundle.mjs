@@ -399,8 +399,40 @@ const F = {
     _fragment: fragmentId,
 };
 
-const App = (props) => {
-    return (F._jsx("div", { style: "font-family: sans-serif;" },
+const Blog = () => {
+    return (F._jsx(F._fragment, null,
+        F._jsx("h2", null, "Blog Posts"),
+        F._jsx("ul", null,
+            F._jsx("li", null, "Whoops nothing here"))));
+};
+
+const FaqItem = (props) => {
+    return (F._jsx("div", { style: "margin-bottom: 1rem; margin-left: 1rem;" },
+        F._jsx("details", { open: true },
+            F._jsx("summary", null,
+                F._jsx("h3", { style: "display: inline-block" }, props.title)),
+            F._jsx("div", null,
+                F._jsx("slot", null)))));
+};
+
+const Faq = () => {
+    return (F._jsx(F._fragment, null,
+        F._jsx("h2", null, "FAQ"),
+        F._jsx(FaqItem, { title: "Was this site really made with Effectual?" }, "Yep! Effectual is being built piecemeal, and with every new version of the framework comes a new version of this site to show off what it can do!"),
+        F._jsx(FaqItem, { title: "So what can it do?" }, "Uhhhh \u2014 this? Look it's a web page!"),
+        F._jsx(FaqItem, { title: "Why's it so ugly?" },
+            "Ah yes well, I haven't added CSS support yet.",
+            " ",
+            F._jsx("sub", null, "Also it probably wouldn't look much better with it")),
+        F._jsx(FaqItem, { title: "How can I get started playing around with it?" },
+            "Check out the github repository at",
+            " ",
+            F._jsx("a", { href: "https://github.com/zwade/effectual", target: "_blank" }, "github.com/zwade/effectual"),
+            "!")));
+};
+
+const Header = () => {
+    return (F._jsx(F._fragment, null,
         F._jsx("h1", null, "Effectual Web Development"),
         F._jsx("hr", null),
         "This site was made with ",
@@ -408,6 +440,15 @@ const App = (props) => {
         ", an educational (and functional!) web development framework."));
 };
 
+const App = (props) => {
+    return (F._jsx("div", { style: "font-family: sans-serif;" },
+        F._jsx(Header, null),
+        F._jsx(Blog, null),
+        F._jsx(Faq, null)));
+};
+
 const expanded = expand(F._jsx(App, null));
 const rendered = render(expanded);
+console.log(expanded);
+console.log(rendered);
 document.getElementById("root").innerHTML = rendered;
