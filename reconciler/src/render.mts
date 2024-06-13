@@ -6,32 +6,33 @@ import { ExpansionEntry } from "./expansion.mjs";
  * A helper function to render the expansion result as a string.
  * This will not be used beyond early debugging.
  */
-export const render = (entry: ExpansionEntry, indent = 0): string => {
+export const render = (entry: ExpansionEntry): string => {
     if (entry.kind === "omit") {
         return "";
     }
 
     if (entry.kind === "text-node") {
-        return "    ".repeat(indent) + entry.value + "\n";
+        return entry.value;
     }
 
     if (entry.kind === "child") {
-        return entry.result.map(([_key, value]) => render(value, indent)).join("");
+        return entry.result.map(([_key, value]) => render(value)).join("");
     }
 
     if (entry.kind === "slot-portal") {
-        return entry.result.map(([_key, value]) => render(value, indent)).join("");
+        return entry.result.map(([_key, value]) => render(value)).join("");
     }
 
     if (entry.kind === "dom-element") {
-        const children = entry.children.map(([_key, value]) => render(value, indent + 1)).join("");
+        const children = entry.children.map(([_key, value]) => render(value)).join("");
         const props = Object.entries(entry.element.props ?? {})
+            .filter(([_key, value]) => value !== undefined)
             .map(([key, value]) => `${key}="${value}"`)
             .join(" ");
 
-        let result = "    ".repeat(indent) + `<${entry.element.tag} ${props}>\n`;
+        let result = `<${entry.element.tag}${props ? ` ${props}` : ""}>`;
         result += children;
-        result += "    ".repeat(indent) + `</${entry.element.tag}>\n`;
+        result += `</${entry.element.tag}>`;
 
         return result;
     }

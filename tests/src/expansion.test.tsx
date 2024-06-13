@@ -8,13 +8,7 @@ describe("Rendering Tests", () => {
         const expanded = expand(<D comment="hi" />);
         const rendered = render(expanded);
 
-        expect(rendered).toBe(
-            `<span>
-    Test:
-    hi
-</span>
-`,
-        );
+        expect(rendered).toBe(`<span>Test:hi</span>`);
     });
 
     test("Test Deeply Nested Render", () => {
@@ -22,28 +16,7 @@ describe("Rendering Tests", () => {
         const rendered = render(expanded);
 
         expect(rendered).toBe(
-            `<div>
-    <span>
-        <b>
-            Number 1
-        </b>
-        <span>
-            Test:
-            A version of D #1
-        </span>
-        First Child!
-    </span>
-    <span>
-        <b>
-            test child rerender
-        </b>
-        <span>
-            Test:
-            B version of D
-        </span>
-    </span>
-</div>
-`,
+            `<div className="foo"><span className="test"><b>Number 1</b><span>Test:A version of D #1</span>First Child!</span><span className="test"><b>test child rerender</b><span>Test:B version of D</span></span></div>`,
         );
     });
 });
