@@ -31,10 +31,10 @@ const fragmentId = Symbol.for("fragment");
 // The general idea is that once we're ready to build an actual bundle
 // We hardcode __DEV__ to true or false which lets deadcode elimination
 // remove any unreachable code
-globalThis.__DEV__ = true;
+globalThis.__DEV__ = false;
 globalThis.__LOG_LEVEL__ = "warn";
-globalThis.__HOOK__ = () => {};
-globalThis.__UNHOOK__ = () => {};
+globalThis.__HOOK__ = () => { };
+globalThis.__UNHOOK__ = () => { };
 if (__DEV__) {
     globalThis.__ASSERT__ = (condition, message) => {
         if (!condition) {
@@ -56,7 +56,8 @@ if (__DEV__) {
         const callbacks = globalThis.__effectual__.hooks.get(hook);
         if (callbacks !== undefined) {
             callbacks.add(callback);
-        } else {
+        }
+        else {
             globalThis.__effectual__.hooks.set(hook, new Set([callback]));
         }
     };

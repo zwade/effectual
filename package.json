@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "packageManager": "yarn@3.8.2",
   "license": "MIT",
+  "main": "lib/bundle.mjs",
   "workspaces": [
     "core",
     "reconciler",
@@ -26,6 +27,9 @@
     "eslint-plugin-simple-import-sort": "^12.0.0",
     "prettier": "^3.2.5",
     "rollup": "^4.18.0"
+  },
+  "scripts": {
+    "prepublish": "yarn rollup -c"
   },
   "r": {
     "build": [

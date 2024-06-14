@@ -30,7 +30,7 @@ declare global {
     /* eslint-enable no-var */
 }
 
-globalThis.__DEV__ = true;
+globalThis.__DEV__ = false;
 globalThis.__LOG_LEVEL__ = "warn";
 globalThis.__HOOK__ = () => {};
 globalThis.__UNHOOK__ = () => {};
