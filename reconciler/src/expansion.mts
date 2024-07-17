@@ -9,24 +9,24 @@ import {
 } from "./elements.mjs";
 import { MemoEntry, memoItemsAreEqual, memoizeItem } from "./memo.mjs";
 
-export type FragmentIsh = [Key: string | undefined, Value: ExpansionEntry];
+export type ExpansionChild = [Key: string, Value: ExpansionEntry];
 export type ExpansionEntry =
     | {
           kind: "dom-element";
           memoKey: MemoEntry;
           element: NativeElement;
-          children: FragmentIsh[];
+          children: ExpansionChild[];
       }
     | {
           kind: "child";
           memoKey: MemoEntry;
           element: EffectualSourceElement;
-          result: FragmentIsh[];
+          result: ExpansionChild[];
       }
     | {
           kind: "slot-portal";
           element: EffectualSlotElement;
-          result: FragmentIsh[];
+          result: ExpansionChild[];
       }
     | { kind: "text-node"; value: string }
     | { kind: "omit" };
@@ -234,7 +234,7 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
         const instantiation = currentRoot.element(currentRoot.props ?? {});
 
         // This code is repeated thrice -- how do i abstract it out?
-        let oldChildren: FragmentIsh[] | undefined = undefined;
+        let oldChildren: ExpansionChild[] | undefined = undefined;
         if (previousRoot && previousRoot.kind === "child") {
             oldChildren = previousRoot.result;
         }
@@ -251,7 +251,7 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
     }
 
     if (currentRoot.kind === "native") {
-        let oldChildren: FragmentIsh[] | undefined = undefined;
+        let oldChildren: ExpansionChild[] | undefined = undefined;
         if (previousRoot && previousRoot.kind === "dom-element") {
             oldChildren = previousRoot.children;
         }
@@ -268,7 +268,7 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
     }
 
     if (currentRoot.kind === "slot") {
-        let oldChildren: FragmentIsh[] | undefined = undefined;
+        let oldChildren: ExpansionChild[] | undefined = undefined;
         if (previousRoot && previousRoot.kind === "slot-portal") {
             oldChildren = previousRoot.result;
         }

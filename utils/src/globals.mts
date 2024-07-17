@@ -30,7 +30,7 @@ declare global {
     /* eslint-enable no-var */
 }
 
-globalThis.__DEV__ = false;
+globalThis.__DEV__ = true;
 globalThis.__LOG_LEVEL__ = "warn";
 globalThis.__HOOK__ = () => {};
 globalThis.__UNHOOK__ = () => {};
@@ -75,7 +75,7 @@ if (__DEV__) {
         const order = { debug: 0, info: 1, warn: 2, error: 3 };
 
         if (order[level] >= order[__LOG_LEVEL__]) {
-            // console.warn(`${level}:`, message, ...args);
+            console.warn(`${level}:`, message, ...args);
         }
     };
 }

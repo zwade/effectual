@@ -31,7 +31,7 @@ const fragmentId = Symbol.for("fragment");
 // The general idea is that once we're ready to build an actual bundle
 // We hardcode __DEV__ to true or false which lets deadcode elimination
 // remove any unreachable code
-globalThis.__DEV__ = true;
+globalThis.__DEV__ = false;
 globalThis.__LOG_LEVEL__ = "warn";
 globalThis.__HOOK__ = () => { };
 globalThis.__UNHOOK__ = () => { };
@@ -69,9 +69,7 @@ if (__DEV__) {
     };
     globalThis.__LOG__ = (level, message, ...args) => {
         const order = { debug: 0, info: 1, warn: 2, error: 3 };
-        if (order[level] >= order[__LOG_LEVEL__]) {
-            console.warn(`${level}:`, message, ...args);
-        }
+        if (order[level] >= order[__LOG_LEVEL__]) ;
     };
 }
 
@@ -367,217 +365,35 @@ const expand = (currentRoot, previousRoot) => {
     return expandDirty(currentRoot, { lexicalScopeStack: [], previousRoot });
 };
 
-function insertSelf(hydrate, element) {
-    if (__DEV__) {
-        if (!hydrate.parent.node) {
-            __LOG__("warn", "Unable to insert element", hydrate);
-        }
+/**
+ * A helper function to render the expansion result as a string.
+ * This will not be used beyond early debugging.
+ */
+const render = (entry) => {
+    if (entry.kind === "omit") {
+        return "";
     }
-    if (hydrate.right?.node) {
-        if (__DEV__) {
-            __LOG__("info", "Inserting new node before element", hydrate.parent.node, hydrate.right.node, element);
-        }
-        hydrate.parent.node.insertBefore(element, hydrate.right.node);
+    if (entry.kind === "text-node") {
+        return entry.value;
     }
-    else {
-        if (__DEV__) {
-            __LOG__("info", "Inserting new node at end of element", hydrate.parent.node, element);
-        }
-        hydrate.parent.node.appendChild(element);
+    if (entry.kind === "child") {
+        return entry.result.map(([_key, value]) => render(value)).join("");
     }
-    // Lie for performance reasons
-    // Normally we would need to do some sort of double casing, but we know
-    // from the function signature that this must be correct
-    hydrate.node = element;
-}
-const createHydrate = (hydrate, context) => {
-    const element = context.target.createElement(hydrate.from.element.tag);
-    const props = hydrate.from.element.props ?? {};
-    for (const key in props) {
-        if (props[key] !== undefined) {
-            element.setAttribute(key, props[key]);
-        }
+    if (entry.kind === "slot-portal") {
+        return entry.result.map(([_key, value]) => render(value)).join("");
     }
-    insertSelf(hydrate, element);
-};
-const updateHydrate = (hydrate, context) => {
-    if (hydrate.previous?.kind !== "node" || hydrate.from.element.tag !== hydrate.previous.from.element.tag) {
-        context.deletionSchedule.push(hydrate.previous);
-        hydrate.previous = undefined;
-        createHydrate(hydrate, context);
+    if (entry.kind === "dom-element") {
+        const children = entry.children.map(([_key, value]) => render(value)).join("");
+        const props = Object.entries(entry.element.props ?? {})
+            .filter(([_key, value]) => value !== undefined)
+            .map(([key, value]) => `${key}="${value}"`)
+            .join(" ");
+        let result = `<${entry.element.tag}${props ? ` ${props}` : ""}>`;
+        result += children;
+        result += `</${entry.element.tag}>`;
+        return result;
     }
-    else {
-        const existingSet = hydrate.previous.from.element.props ?? {};
-        const newSet = hydrate.from.element.props ?? {};
-        const element = hydrate.previous.node;
-        for (const key in existingSet) {
-            if (!(key in newSet) || newSet[key] === undefined) {
-                element.removeAttribute(key);
-            }
-            else if (newSet[key] !== existingSet[key]) {
-                element.setAttribute(key, newSet[key]);
-            }
-        }
-        for (const key in newSet) {
-            if (!(key in existingSet) && newSet[key] !== undefined) {
-                element.setAttribute(key, newSet[key]);
-            }
-        }
-        if (element.nextSibling !== (hydrate.right?.node ?? null)) {
-            hydrate.parent.node?.removeChild(element);
-            insertSelf(hydrate, element);
-        }
-        hydrate.previous = undefined; // We need to make sure we can GC
-        hydrate.node = element;
-    }
-};
-const createTextHydrate = (hydrate, context) => {
-    const element = context.target.createTextNode(hydrate.from.value);
-    insertSelf(hydrate, element);
-};
-const updateTextHydrate = (hydrate, context) => {
-    if (hydrate.previous?.kind !== "text") {
-        context.deletionSchedule.push(hydrate.previous);
-        hydrate.previous = undefined;
-        createTextHydrate(hydrate, context);
-    }
-    else {
-        const element = hydrate.previous.node;
-        element.textContent = hydrate.from.value;
-        if (element.nextSibling !== (hydrate.right?.node ?? null)) {
-            hydrate.parent.node?.removeChild(element);
-            insertSelf(hydrate, element);
-        }
-        hydrate.node = element;
-        hydrate.previous = undefined;
-    }
-};
-const processHydrate = (hydrate, context) => {
-    if (hydrate.kind === "node") {
-        if (hydrate.previous !== undefined) {
-            updateHydrate(hydrate, context);
-        }
-        else {
-            createHydrate(hydrate, context);
-        }
-    }
-    else if (hydrate.kind === "text") {
-        if (hydrate.previous !== undefined) {
-            updateTextHydrate(hydrate, context);
-        }
-        else {
-            createTextHydrate(hydrate, context);
-        }
-    }
-};
-const deleteHydrate = (hydrate, _context) => {
-    if (hydrate.kind === "node" || hydrate.kind === "text") {
-        hydrate.parent.node?.removeChild(hydrate.node);
-    }
-};
-
-const fullyFlattenExpansion = (children, keyPrefix = "", acc = []) => {
-    for (let i = 0; i < children.length; i++) {
-        const [key = i.toString(), child] = children[i];
-        switch (child.kind) {
-            case "dom-element":
-            case "text-node": {
-                acc.push([keyPrefix + key, child]);
-                break;
-            }
-            case "child":
-            case "slot-portal": {
-                fullyFlattenExpansion(child.result, keyPrefix + key + "\x00", acc);
-                break;
-            }
-        }
-    }
-    return acc;
-};
-const reconcileChildren = (children, context) => {
-    const previousElementsByKey = Object.create(null);
-    if (context.previousLevel) {
-        for (const [key, child] of context.previousLevel) {
-            previousElementsByKey[key] = child;
-        }
-    }
-    let rightSibling = undefined;
-    const newChildren = [];
-    for (const [key, child] of children.slice().reverse()) {
-        const previousChild = previousElementsByKey[key];
-        delete previousElementsByKey[key];
-        let newNode;
-        if (child.kind === "dom-element") {
-            const parent = {
-                kind: "node",
-                parent: context.parent,
-                previous: previousChild?.node,
-                from: child,
-                right: rightSibling,
-            };
-            const flatChildren = fullyFlattenExpansion(child.children);
-            const previousChildren = previousChild?.kind === "dom-element" ? previousChild.children : undefined;
-            context.updateSchedule.push(parent);
-            const newChild = reconcileChildren(flatChildren, {
-                parent,
-                updateSchedule: context.updateSchedule,
-                deletionSchedule: context.deletionSchedule,
-                previousLevel: previousChildren,
-            });
-            newChildren.push([
-                key,
-                {
-                    kind: "dom-element",
-                    children: newChild,
-                    element: child.element,
-                    memoKey: child.memoKey,
-                    node: parent,
-                },
-            ]);
-            newNode = parent;
-        }
-        else {
-            newNode = {
-                kind: "text",
-                parent: context.parent,
-                previous: previousChild?.node,
-                from: child,
-                right: rightSibling,
-            };
-            newChildren.push([
-                key,
-                {
-                    kind: "text-node",
-                    node: newNode,
-                },
-            ]);
-            context.updateSchedule.push(newNode);
-        }
-        rightSibling = newNode;
-    }
-    for (const key in previousElementsByKey) {
-        context.deletionSchedule.push(previousElementsByKey[key].node);
-    }
-    return newChildren;
-};
-const reconcile = (entry, rootHydrate, target, previousRun) => {
-    const updateSchedule = [];
-    const deletionSchedule = [];
-    const children = reconcileChildren(fullyFlattenExpansion([["root", entry]]), {
-        parent: rootHydrate,
-        updateSchedule,
-        deletionSchedule,
-        previousLevel: previousRun,
-    });
-    const hydrateContext = { updateSchedule, deletionSchedule, target };
-    while (updateSchedule.length > 0) {
-        const next = updateSchedule.shift();
-        processHydrate(next, hydrateContext);
-    }
-    while (deletionSchedule.length > 0) {
-        deleteHydrate(deletionSchedule.shift());
-    }
-    return children;
+    return unreachable(entry);
 };
 
 const F = {
@@ -642,43 +458,16 @@ const Progress = () => (F._jsx(F._fragment, null,
     F._jsx(ProgressItem, null, "Style Support"),
     F._jsx(ProgressItem, null, "Data Loading")));
 
-const RerenderStatus = (props) => {
-    return (F._jsx("div", { class: "header" },
-        "This page has been rerendered ",
-        props.count,
-        " times.",
-        " ",
-        F._jsx("button", { onclick: "window.reconciler()" }, "Click here to rerender.")));
-};
-
 const App = (props) => {
-    const sections = [F._jsx(Blog, { key: "blog" }), F._jsx(Progress, { key: "progress" }), F._jsx(Faq, { key: "faq" })];
-    const toRender = [...sections.slice(props.count % 3), ...sections.slice(0, props.count % 3)];
-    console.log(toRender);
-    console.log("Rerendering");
     return (F._jsx("div", { style: "font-family: sans-serif;" },
         F._jsx(Header, null),
-        F._jsx(RerenderStatus, { count: props.count }),
-        toRender));
+        F._jsx(Blog, null),
+        F._jsx(Progress, null),
+        F._jsx(Faq, null)));
 };
 
-const buildReconciliationLoop = (rootEl) => {
-    const root = {
-        kind: "root",
-        node: rootEl,
-    };
-    let lastPass = undefined;
-    let lastReconciliation = undefined;
-    let count = 0;
-    const reReconcile = () => {
-        const nextPass = expand(F._jsx(App, { count: count }), lastPass);
-        const nextReconciliation = reconcile(nextPass, root, document, lastReconciliation);
-        lastPass = nextPass;
-        lastReconciliation = nextReconciliation;
-        count += 1;
-    };
-    return reReconcile;
-};
-const reconciler = buildReconciliationLoop(document.getElementById("root"));
-window.reconciler = reconciler;
-reconciler();
+const expanded = expand(F._jsx(App, null));
+const rendered = render(expanded);
+console.log(expanded);
+console.log(rendered);
+document.getElementById("root").innerHTML = rendered;

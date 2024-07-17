@@ -17,7 +17,7 @@ interface AProps {
 }
 
 export const D = (props: DProps) => {
-    return <span>Test:{props.comment}</span>;
+    return <span>Test: {props.comment}</span>;
 };
 
 export const C = (props: CProps) => {
