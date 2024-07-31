@@ -1,3 +1,4 @@
+import { EffectualSlotElement } from "./elements.mjs";
 import { GenerationalMap } from "./generational-map.mjs";
 
 declare global {
@@ -269,3 +270,11 @@ export class ElementCache {
         this.#current = values;
     }
 }
+
+export const SlotGenerator = new Proxy({} as Record<string, EffectualSlotElement>, {
+    get(target, p: string): EffectualSlotElement {
+        return { kind: "slot", name: p };
+    },
+});
+
+Object.freeze(SlotGenerator);

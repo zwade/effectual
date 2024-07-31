@@ -1,3 +1,5 @@
+import { F } from "./elements.mjs";
+
 export interface HydrationTarget<T extends HTNode<T> = OpaqueHTNode> {
     createElement: (tag: string) => HTContentNode<T>;
     createTextNode: (value: string) => HTTextNode<T>;
@@ -27,7 +29,7 @@ export type HTNode<T extends HTNode<T> = OpaqueHTNode> = HTContentNode<T> | HTTe
 export type HTCSSStyleDeclaration<T extends HTNode<T> = OpaqueHTNode> = {
     setProperty(key: string, value: string): void;
     cssText: string;
-} & JSX.CSSStyles;
+} & F.CSSStyles;
 
 export type OpaqueHydrationTarget = HydrationTarget<OpaqueHTNode>;
 export type OpaqueHTBaseNode = HTBaseNode<OpaqueHTNode>;

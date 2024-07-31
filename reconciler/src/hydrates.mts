@@ -1,3 +1,4 @@
+import { F } from "./elements.mjs";
 import { ExpansionEntry } from "./expansion.mjs";
 import { HTContentNode, HTNode, HTTextNode, HydrationTarget } from "./hydration-target.mjs";
 
@@ -77,11 +78,13 @@ const setAttribute = (element: HTContentNode, key: string, value: unknown, previ
 
         for (const [k, v] of Object.entries(value as Record<string, string>)) {
             if (!k.startsWith("--")) {
-                element.style[k as keyof JSX.CSSStyles] = v;
+                element.style[k as keyof F.CSSStyles] = v;
             } else {
                 element.style.setProperty(k, v);
             }
         }
+
+        return;
     }
 
     if (typeof value === "string" && !key.startsWith("$")) {

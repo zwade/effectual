@@ -1,6 +1,4 @@
-import { createElement, fragmentId } from "./elements.mjs";
-
-export { createElement, EffectualComponent, EffectualSourceElement, fragmentId, NativeElement } from "./elements.mjs";
+export { F as _F, createElement, EffectualSourceElement, fragmentId, NativeElement } from "./elements.mjs";
 export { expand } from "./expansion.mjs";
 export {
     BaseHydrate,
@@ -32,8 +30,3 @@ export { MockHTContentNode, MockHTNode, MockHTTextNode } from "./mock-target.mjs
 export { AssignableStore, Store } from "./reactivity-utils.mjs";
 export { fullyFlattenExpansion, reconcile, ReconciliationChild, ReconciliationEntry } from "./reconciler.mjs";
 export { render } from "./render.mjs";
-
-export const F = {
-    _jsx: createElement,
-    _fragment: fragmentId,
-};

@@ -18,6 +18,7 @@ import {
     resetDirtyState,
     SelfIdentity,
     setCurrentContext,
+    SlotGenerator,
 } from "./reactivity.mjs";
 
 export type ExpansionChild = [Key: string, Value: ExpansionEntry];
@@ -264,7 +265,7 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
         let instantiation: EffectualElement;
         try {
             const emits = reconcileEmits(identity, currentRoot.emits);
-            instantiation = currentRoot.element(currentRoot.props ?? {}, emits);
+            instantiation = currentRoot.element(currentRoot.props ?? {}, { emits, slots: SlotGenerator });
         } finally {
             setCurrentContext(null);
         }
@@ -307,7 +308,7 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
             oldChildren = previousRoot.result;
         }
 
-        const children = context.lexicalScopeStack[0].element.children;
+        const children = context.lexicalScopeStack[0].element.children[currentRoot.name ?? "default"];
         const contextWasClean = context.lexicalScopeStack[0].clean;
         const newStack = context.lexicalScopeStack.slice(1);
 

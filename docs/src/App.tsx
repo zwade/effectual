@@ -25,9 +25,8 @@ export const App = (props: Props) => {
         <div style="font-family: sans-serif;">
             <Header />
 
-            <RerenderStatus />
-            <RerenderAction className="test-button" $on:click={onClick}>
-                <b>Click to re-render</b>
+            <RerenderAction className="test-button" $on:click={onClick} $slot:cta={<b>Click to re-render</b>}>
+                <RerenderStatus />
             </RerenderAction>
 
             <Blog />

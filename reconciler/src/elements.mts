@@ -1,12 +1,4 @@
 /**
- * An EffectualComponent is a function that returns any kind of valid EffectualElement.
- * It can be used to instantiate a new component via TSX.
- */
-export interface EffectualComponent<Props extends Record<string, any> = any, Emits extends Record<string, any> = any> {
-    (props?: Props, emits?: Emits): JSX.Element;
-}
-
-/**
  * NativeElements are those that are built-in to the browser, such as div, span, etc.
  * This type is produced by the createElement function (or more likely, the `F._jsx` helper).
  */
@@ -24,10 +16,10 @@ export type NativeElement = {
  */
 export type EffectualSourceElement = {
     kind: "custom";
-    element: EffectualComponent<any>;
+    element: F.EffectualComponent<any>;
     props?: Record<string, any>;
     emits?: Record<string, any>;
-    children: EffectualElement[];
+    children: Record<string, EffectualElement>;
 };
 
 /**
@@ -46,6 +38,7 @@ export type EffectualFragment = {
  */
 export type EffectualSlotElement = {
     kind: "slot";
+    name?: string;
     props?: Record<string, any>;
 };
 
@@ -82,14 +75,18 @@ type KeyProps<Props extends Record<string, any>> = {
  *
  * And then importing it at the callsite as `import { F } from "effectual"`.
  */
-export function createElement(tag: "slot", props: null, ...children: EffectualElement[]): EffectualSlotElement;
+export function createElement(
+    tag: "slot",
+    props: { name?: string },
+    ...children: EffectualElement[]
+): EffectualSlotElement;
 export function createElement<Tag extends keyof HTMLElementTagNameMap, Props extends Record<string, any>>(
     tag: Tag,
     props: KeyProps<Props> | null,
     ...children: EffectualElement[]
 ): NativeElement;
 export function createElement<Props extends Record<string, any>>(
-    element: EffectualComponent<Props>,
+    element: F.EffectualComponent<Props>,
     props: KeyProps<Props> | null,
     ...children: EffectualElement[]
 ): EffectualSourceElement;
@@ -99,7 +96,7 @@ export function createElement(
     ...children: EffectualElement[]
 ): EffectualFragment;
 export function createElement(
-    tag: string | EffectualComponent<any> | typeof fragmentId,
+    tag: string | F.EffectualComponent<any> | typeof fragmentId,
     attrs: Record<string, any> | null,
     ...children: EffectualElement[]
 ): EffectualElement {
@@ -113,12 +110,15 @@ export function createElement(
     if (tag === "slot") {
         return {
             kind: "slot",
+            name: attrs?.name ?? undefined,
+            props: attrs ?? undefined,
         };
     }
 
     if (typeof tag === "function") {
         const props: Record<string, any> = {};
         const emits: Record<string, any> = {};
+        const allChildren: Record<string, EffectualElement> = {};
 
         let hasEmits = false;
 
@@ -126,9 +126,15 @@ export function createElement(
             if (key.startsWith("$on:")) {
                 emits[key.slice(4)] = attrs[key];
                 hasEmits = true;
+            } else if (key.startsWith("$slot:")) {
+                allChildren[key.slice(6)] = attrs[key];
             } else {
                 props[key] = attrs[key];
             }
+        }
+
+        if (children.length > 0) {
+            allChildren["default"] = children;
         }
 
         return {
@@ -136,7 +142,7 @@ export function createElement(
             element: tag,
             props,
             emits: hasEmits ? emits : undefined,
-            children,
+            children: allChildren,
         };
     }
 
@@ -150,23 +156,39 @@ export function createElement(
 
 export const fragmentId = Symbol.for("fragment");
 
-declare global {
+export declare namespace F {
+    type Element = EffectualElement;
+
+    type CSSStyles = {
+        [K in keyof CSSStyleDeclaration as CSSStyleDeclaration[K] extends string ? K : never]?: string;
+    };
+
+    type Ctx<K extends { emits?: {}; slots?: {} }> = K;
+
+    /**
+     * An EffectualComponent is a function that returns any kind of valid EffectualElement.
+     * It can be used to instantiate a new component via TSX.
+     */
+    interface EffectualComponent<
+        Props extends Record<string, any> = any,
+        Emits extends Record<string, any> = any,
+        Slots extends Record<string, F.JSX.Element> = any,
+    > {
+        (props?: Props, ctx?: F.Ctx<{ emits: Emits; slots: Slots }>): F.JSX.Element;
+    }
+
     namespace JSX {
         /**
          * The structure of all native components.
          * This is not currently implemented.
          */
-        type CSSStyles = {
-            [K in keyof CSSStyleDeclaration as CSSStyleDeclaration[K] extends string ? K : never]?: string;
-        };
-
         type IntrinsicElements = {
             [K in keyof HTMLElementTagNameMap]: Record<string, any> & {
                 "$on:click"?: (e: MouseEvent) => boolean | void;
                 "$on:mousedown"?: (e: MouseEvent) => boolean | void;
                 "$on:mouseup"?: (e: MouseEvent) => boolean | void;
                 class?: string;
-                style?: string | CSSStyles;
+                style?: string | F.CSSStyles;
             };
         };
 
@@ -180,11 +202,25 @@ declare global {
         /**
          * What an "element" is in the context of JSX.
          */
-        type Element = EffectualElement;
+        type Element = F.Element;
 
         type LibraryManagedAttributes<C, P> = P &
-            (C extends (p: any, emits: infer Emits) => any
-                ? { [Emit in keyof Emits as Emit extends string ? `$on:${Emit}` : never]: Emits[Emit] }
+            (C extends (p: any, ctx: infer Args extends { emits: {} }) => any
+                ? {
+                      [Emit in keyof Args["emits"] as Emit extends string ? `$on:${Emit}` : never]: Args["emits"][Emit];
+                  }
+                : {}) &
+            (C extends (p: any, ctx: infer Args extends { slots: {} }) => any
+                ? {
+                      [Slot in keyof Args["slots"] as Slot extends string
+                          ? `$slot:${Slot}`
+                          : never]: Args["slots"][Slot];
+                  }
                 : {});
     }
 }
+
+export const F = {
+    _jsx: createElement,
+    _fragment: fragmentId,
+};

@@ -5,7 +5,7 @@ interface DProps {
 }
 
 interface CProps {
-    comment: JSX.Element;
+    comment: F.JSX.Element;
 }
 
 interface BProps {

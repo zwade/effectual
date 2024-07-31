@@ -8,27 +8,36 @@ function createElement(tag, attrs, ...children) {
     if (tag === "slot") {
         return {
             kind: "slot",
+            name: attrs?.name ?? undefined,
+            props: attrs ?? undefined,
         };
     }
     if (typeof tag === "function") {
         const props = {};
         const emits = {};
+        const allChildren = {};
         let hasEmits = false;
         for (const key in attrs) {
             if (key.startsWith("$on:")) {
                 emits[key.slice(4)] = attrs[key];
                 hasEmits = true;
             }
+            else if (key.startsWith("$slot:")) {
+                allChildren[key.slice(6)] = attrs[key];
+            }
             else {
                 props[key] = attrs[key];
             }
+        }
+        if (children.length > 0) {
+            allChildren["default"] = children;
         }
         return {
             kind: "custom",
             element: tag,
             props,
             emits: hasEmits ? emits : undefined,
-            children,
+            children: allChildren,
         };
     }
     return {
@@ -39,6 +48,10 @@ function createElement(tag, attrs, ...children) {
     };
 }
 const fragmentId = Symbol.for("fragment");
+const F = {
+    _jsx: createElement,
+    _fragment: fragmentId,
+};
 
 // Mimicing react's pattern here
 // The general idea is that once we're ready to build an actual bundle
@@ -382,6 +395,12 @@ class ElementCache {
         this.#current = values;
     }
 }
+const SlotGenerator = new Proxy({}, {
+    get(target, p) {
+        return { kind: "slot", name: p };
+    },
+});
+Object.freeze(SlotGenerator);
 
 /**
  * Given a newly invoked source element and a previous expansion, determine whether
@@ -561,7 +580,7 @@ const expandDirty = (currentRoot, context) => {
         let instantiation;
         try {
             const emits = reconcileEmits(identity, currentRoot.emits);
-            instantiation = currentRoot.element(currentRoot.props ?? {}, emits);
+            instantiation = currentRoot.element(currentRoot.props ?? {}, { emits, slots: SlotGenerator });
         }
         finally {
             setCurrentContext(null);
@@ -599,7 +618,7 @@ const expandDirty = (currentRoot, context) => {
         if (previousRoot && previousRoot.kind === "slot-portal") {
             oldChildren = previousRoot.result;
         }
-        const children = context.lexicalScopeStack[0].element.children;
+        const children = context.lexicalScopeStack[0].element.children[currentRoot.name ?? "default"];
         const contextWasClean = context.lexicalScopeStack[0].clean;
         const newStack = context.lexicalScopeStack.slice(1);
         return {
@@ -677,6 +696,7 @@ const setAttribute = (element, key, value, previousValue) => {
                 element.style.setProperty(k, v);
             }
         }
+        return;
     }
     if (typeof value === "string" && !key.startsWith("$")) {
         element.setAttribute(key, value);
@@ -900,11 +920,6 @@ const reconcile = (entry, rootHydrate, target, previousRun) => {
     return children;
 };
 
-const F = {
-    _jsx: createElement,
-    _fragment: fragmentId,
-};
-
 const Blog = () => {
     return (F._jsx(F._fragment, null,
         F._jsx("h2", null, "Blog Posts"),
@@ -916,7 +931,7 @@ const Blog = () => {
 };
 
 const Shown = Store.create(true);
-const FaqItem = (props) => {
+const FaqItem = (_props, ctx) => {
     const shown = Shown.provide();
     return (F._jsx("div", { style: { marginBottom: "1rem", marginLeft: "1rem", cursor: "pointer" } },
         F._jsx("div", { open: shown.getValue(), "$on:click": (e) => {
@@ -926,7 +941,7 @@ const FaqItem = (props) => {
             F._jsx("h3", { style: { display: "inline-block" } },
                 shown.getValue() ? "⬇" : "⮕",
                 " ",
-                props.title),
+                ctx.slots.title),
             shown.getValue() ? (F._jsx("div", null,
                 F._jsx("slot", null))) : null)));
 };
@@ -934,13 +949,16 @@ const FaqItem = (props) => {
 const Faq = () => {
     return (F._jsx(F._fragment, null,
         F._jsx("h2", null, "FAQ"),
-        F._jsx(FaqItem, { title: "Was this site really made with Effectual?" }, "Yep! Effectual is being built piecemeal, and with every new version of the framework comes a new version of this site to show off what it can do!"),
-        F._jsx(FaqItem, { title: "So what can it do?" }, "Uhhhh \u2014 this? Look it's a web page!"),
-        F._jsx(FaqItem, { title: "Why's it so ugly?" },
+        F._jsx(FaqItem, { "$slot:title": F._jsx("span", null,
+                "Was this site ",
+                F._jsx("i", null, "really"),
+                " made with Effectual?") }, "Yep! Effectual is being built piecemeal, and with every new version of the framework comes a new version of this site to show off what it can do!"),
+        F._jsx(FaqItem, { "$slot:title": "So what can it do?" }, "Uhhhh \u2014 this? Look it's a web page!"),
+        F._jsx(FaqItem, { "$slot:title": "Why's it so ugly?" },
             "Ah yes well, I haven't added CSS support yet.",
             " ",
             F._jsx("sub", null, "Also it probably wouldn't look much better with it")),
-        F._jsx(FaqItem, { title: "How can I get started playing around with it?" },
+        F._jsx(FaqItem, { "$slot:title": "How can I get started playing around with it?" },
             "Check out the github repository at",
             " ",
             F._jsx("a", { href: "https://github.com/zwade/effectual", target: "_blank" }, "github.com/zwade/effectual"),
@@ -978,10 +996,11 @@ const Progress = () => (F._jsx(F._fragment, null,
     F._jsx(ProgressItem, null, "Style Support"),
     F._jsx(ProgressItem, null, "Data Loading")));
 
-const RerenderAction = (props, emits) => {
+const RerenderAction = (props, ctx) => {
     return (F._jsx("div", { class: `${props.className ?? ""} rerender-action` },
-        F._jsx("button", { "$on:click": () => emits.click?.() },
-            F._jsx("slot", null))));
+        F._jsx("slot", null),
+        F._jsx("button", { "$on:click": () => ctx.emits.click?.() },
+            F._jsx("slot", { name: "cta" }))));
 };
 
 const RerenderStatus = (props) => {
@@ -1002,9 +1021,8 @@ const App = (props) => {
     };
     return (F._jsx("div", { style: "font-family: sans-serif;" },
         F._jsx(Header, null),
-        F._jsx(RerenderStatus, null),
-        F._jsx(RerenderAction, { className: "test-button", "$on:click": onClick },
-            F._jsx("b", null, "Click to re-render")),
+        F._jsx(RerenderAction, { className: "test-button", "$on:click": onClick, "$slot:cta": F._jsx("b", null, "Click to re-render") },
+            F._jsx(RerenderStatus, null)),
         F._jsx(Blog, null),
         F._jsx(Progress, null),
         F._jsx(Faq, null),
@@ -1031,6 +1049,7 @@ const buildReconciliationLoop = (rootEl) => {
     };
     requestAnimationFrame(reReconcile);
 };
+// __LOG_LEVEL__ = "info";
 __HOOK__("expansion_new", (root) => {
     __LOG__("info", "Expanding element", root.element.name);
 });

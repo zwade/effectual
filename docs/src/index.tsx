@@ -29,6 +29,7 @@ const buildReconciliationLoop = (rootEl: HTMLElement) => {
     requestAnimationFrame(reReconcile);
 };
 
+// __LOG_LEVEL__ = "info";
 __HOOK__("expansion_new", (root) => {
     __LOG__("info", "Expanding element", root.element.name);
 });

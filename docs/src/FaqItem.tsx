@@ -1,12 +1,12 @@
 import { F, Store } from "@effectualjs/core";
 
-interface Props {
-    title: string;
-}
-
 const Shown = Store.create(true);
 
-export const FaqItem = (props: Props) => {
+interface Slots {
+    title: F.Element;
+}
+
+export const FaqItem = (_props: {}, ctx: F.Ctx<{ slots: Slots }>) => {
     const shown = Shown.provide();
 
     return (
@@ -19,7 +19,7 @@ export const FaqItem = (props: Props) => {
                 }}
             >
                 <h3 style={{ display: "inline-block" }}>
-                    {shown.getValue() ? "⬇" : "⮕"} {props.title}
+                    {shown.getValue() ? "⬇" : "⮕"} {ctx.slots.title}
                 </h3>
 
                 {shown.getValue() ? (
