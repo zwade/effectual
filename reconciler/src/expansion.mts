@@ -94,12 +94,12 @@ const flattenElements = (entry: EffectualElement[], acc: FlatElement[] = [], cur
                 continue;
             }
 
-            const key = getKey(element) ?? `${currentPosition + i}`;
+            const key = getKey(element) ?? `__static_${currentPosition + i}`;
             acc.push([key, element]);
             continue;
         }
 
-        acc.push([`${currentPosition + i}`, element]);
+        acc.push([`__static_${currentPosition + i}`, element]);
     }
 
     return acc;

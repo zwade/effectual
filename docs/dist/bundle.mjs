@@ -437,11 +437,11 @@ const flattenElements = (entry, acc = [], currentPosition = 0) => {
                 flattenElements(element.children, acc, currentPosition + i);
                 continue;
             }
-            const key = getKey(element) ?? `${currentPosition + i}`;
+            const key = getKey(element) ?? `__static_${currentPosition + i}`;
             acc.push([key, element]);
             continue;
         }
-        acc.push([`${currentPosition + i}`, element]);
+        acc.push([`__static_${currentPosition + i}`, element]);
     }
     return acc;
 };
@@ -930,7 +930,7 @@ const Blog = () => {
                 F._jsx("a", { href: "https://dttw.tech/posts/Bn_yOwnTo", target: "_blank" }, "Part 1: Rend(er) me Asunder")))));
 };
 
-const Shown = Store.create(true);
+const Shown = Store.create(false);
 const FaqItem = (_props, ctx) => {
     const shown = Shown.provide();
     return (F._jsx("div", { style: { marginBottom: "1rem", marginLeft: "1rem", cursor: "pointer" } },
@@ -1005,10 +1005,38 @@ const RerenderAction = (props, ctx) => {
 
 const RerenderStatus = (props) => {
     const count = Count.use();
-    return F._jsx("div", { class: "header" },
+    return F._jsx("span", null,
         "This page has been rerendered ",
         count,
-        " times.");
+        " times. ");
+};
+
+const LogStore = Store.create([]);
+const RerenderLog = () => {
+    const log = LogStore.provide();
+    // This is a huge hack since we don't have effects yet
+    if (!window.hasHooked) {
+        window.hasHooked = true;
+        __HOOK__("expansion_new", (root) => {
+            if (root.element !== RerenderLog) {
+                console.log(root.element.name);
+                setTimeout(() => log.set((log) => [
+                    ...log,
+                    `Rerendered ${new Date().toLocaleTimeString()}: ${root.element.name};`,
+                ]), 0);
+            }
+        });
+    }
+    return (F._jsx("div", null,
+        F._jsx("h3", null, "Rerender Log"),
+        F._jsx("div", { style: {
+                height: "10rem",
+                border: "1px solid black",
+                borderRadius: "8px",
+                overflow: "scroll",
+                marginBottom: "1rem",
+            } },
+            F._jsx("div", { style: { display: "flex", flexFlow: "column-reverse", padding: "0.5rem" } }, log.getValue().map((value, i) => (F._jsx("div", { key: i }, value)))))));
 };
 
 const Count = Store.create(0);
@@ -1021,11 +1049,13 @@ const App = (props) => {
     };
     return (F._jsx("div", { style: "font-family: sans-serif;" },
         F._jsx(Header, null),
-        F._jsx(RerenderAction, { className: "test-button", "$on:click": onClick, "$slot:cta": F._jsx("b", null, "Click to re-render") },
-            F._jsx(RerenderStatus, null)),
         F._jsx(Blog, null),
         F._jsx(Progress, null),
         F._jsx(Faq, null),
+        F._jsx("h2", null, "Reactivity Test"),
+        F._jsx(RerenderAction, { className: "test-button", "$on:click": onClick, "$slot:cta": F._jsx("b", null, "Click to re-render") },
+            F._jsx(RerenderStatus, null)),
+        F._jsx(RerenderLog, null),
         F._jsx(Footer, null)));
 };
 

@@ -7,6 +7,7 @@ import { Header } from "./Header.js";
 import { Progress } from "./Progress.js";
 import { RerenderAction } from "./RerenderAction.js";
 import { RerenderStatus } from "./RerenderCount.js";
+import { RerenderLog } from "./RerenderLog.js";
 
 export interface Props {}
 
@@ -25,13 +26,15 @@ export const App = (props: Props) => {
         <div style="font-family: sans-serif;">
             <Header />
 
-            <RerenderAction className="test-button" $on:click={onClick} $slot:cta={<b>Click to re-render</b>}>
-                <RerenderStatus />
-            </RerenderAction>
-
             <Blog />
             <Progress />
             <Faq />
+
+            <h2>Reactivity Test</h2>
+            <RerenderAction className="test-button" $on:click={onClick} $slot:cta={<b>Click to re-render</b>}>
+                <RerenderStatus />
+            </RerenderAction>
+            <RerenderLog />
 
             <Footer />
         </div>

@@ -6,5 +6,5 @@ export interface Props {}
 
 export const RerenderStatus = (props: Props) => {
     const count = Count.use();
-    return <div class="header">This page has been rerendered {count} times.</div>;
+    return <span>This page has been rerendered {count} times. </span>;
 };

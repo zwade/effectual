@@ -1,6 +1,6 @@
 import { F, Store } from "@effectualjs/core";
 
-const Shown = Store.create(true);
+const Shown = Store.create(false);
 
 interface Slots {
     title: F.Element;
