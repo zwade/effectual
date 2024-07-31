@@ -8,6 +8,17 @@ import {
     SingletonElement,
 } from "./elements.mjs";
 import { MemoEntry, memoItemsAreEqual, memoizeItem } from "./memo.mjs";
+import {
+    getNewIdentity,
+    isElementDirty,
+    popCurrentStateContext,
+    pushCurrentStateContext,
+    reconcileEmits,
+    resetDependencyState,
+    resetDirtyState,
+    SelfIdentity,
+    setCurrentContext,
+} from "./reactivity.mjs";
 
 export type ExpansionChild = [Key: string, Value: ExpansionEntry];
 export type ExpansionEntry =
@@ -22,6 +33,7 @@ export type ExpansionEntry =
           memoKey: MemoEntry;
           element: EffectualSourceElement;
           result: ExpansionChild[];
+          identity: SelfIdentity;
       }
     | {
           kind: "slot-portal";
@@ -143,7 +155,7 @@ const expandClean = (element: ExpansionEntry, context: Context): ExpansionEntry 
     }
 
     if (element.kind === "child") {
-        const isDirty = false; // TODO(zwade for zwade): Implement me
+        const isDirty = isElementDirty(element.identity);
 
         if (isDirty) {
             return expandDirty(element.element, { ...context, previousRoot: element });
@@ -155,6 +167,7 @@ const expandClean = (element: ExpansionEntry, context: Context): ExpansionEntry 
             kind: "child",
             element: element.element,
             memoKey: element.memoKey,
+            identity: element.identity,
             result: element.result.map(([key, child]) => {
                 const newContext: Context = { lexicalScopeStack: newStack, previousRoot: child };
                 return [key, expandClean(child, newContext)];
@@ -201,7 +214,8 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
     }
 
     if (currentRoot.kind === "custom") {
-        const isDirty = false; // TODO(zwade for zwade): Implement me
+        const isDirty = previousRoot?.kind === "child" && isElementDirty(previousRoot.identity);
+
         const newStack: LexicalScope[] = [{ element: currentRoot, clean: false }, ...context.lexicalScopeStack];
 
         if (
@@ -215,9 +229,12 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
                 __TRIGGER__("expansion_reuse", currentRoot, context);
             }
 
+            reconcileEmits(previousRoot.identity, currentRoot.emits);
+
             return {
                 kind: "child",
                 element: currentRoot,
+                identity: previousRoot.identity,
                 memoKey: previousRoot.memoKey,
                 result: previousRoot.result.map(([key, child]) => [
                     key,
@@ -226,28 +243,45 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
             };
         }
 
+        // This code is repeated thrice -- how do i abstract it out?
+        let oldChildren: ExpansionChild[] | undefined = undefined;
+        let identity: SelfIdentity;
+        if (previousRoot && previousRoot.kind === "child") {
+            oldChildren = previousRoot.result;
+            identity = previousRoot.identity;
+        } else {
+            identity = getNewIdentity();
+        }
+
         if (__DEV__) {
             __LOG__("debug", "Instantiating", currentRoot);
             __TRIGGER__("expansion_new", currentRoot, context);
         }
 
-        const instantiation = currentRoot.element(currentRoot.props ?? {});
+        setCurrentContext(identity);
+        pushCurrentStateContext(identity);
 
-        // This code is repeated thrice -- how do i abstract it out?
-        let oldChildren: ExpansionChild[] | undefined = undefined;
-        if (previousRoot && previousRoot.kind === "child") {
-            oldChildren = previousRoot.result;
+        let instantiation: EffectualElement;
+        try {
+            const emits = reconcileEmits(identity, currentRoot.emits);
+            instantiation = currentRoot.element(currentRoot.props ?? {}, emits);
+        } finally {
+            setCurrentContext(null);
         }
 
-        return {
+        const result: ExpansionEntry = {
             kind: "child",
             element: currentRoot,
+            identity,
             memoKey: memoizeItem(currentRoot.props),
             result: flattenElement(instantiation).map(([key, child]) => {
                 const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
                 return [key, expandDirty(child, { previousRoot: extantChild, lexicalScopeStack: newStack })];
             }),
         };
+
+        popCurrentStateContext();
+        return result;
     }
 
     if (currentRoot.kind === "native") {
@@ -310,5 +344,9 @@ export const expand = (currentRoot: EffectualElement, previousRoot?: ExpansionEn
         throw new Error("Root element must be a custom element");
     }
 
-    return expandDirty(currentRoot, { lexicalScopeStack: [], previousRoot });
+    resetDependencyState();
+    const result = expandDirty(currentRoot, { lexicalScopeStack: [], previousRoot });
+    resetDirtyState();
+
+    return result;
 };

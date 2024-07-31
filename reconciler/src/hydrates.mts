@@ -60,13 +60,57 @@ function insertSelf(hydrate: TextHydrate | NodeHydrate, element: HTNode): void {
     (hydrate as NodeHydrate).node = element as HTContentNode;
 }
 
+const setAttribute = (element: HTContentNode, key: string, value: unknown, previousValue?: unknown) => {
+    if (key.startsWith("$on:") && typeof value === "function") {
+        const eventName = key.slice(4).toLowerCase();
+
+        if (typeof previousValue === "function") {
+            element.removeEventListener(eventName, previousValue as () => void);
+        }
+
+        element.addEventListener(eventName, value as () => void);
+        return;
+    }
+
+    if (typeof value === "object" && key === "style") {
+        element.style.cssText = "";
+
+        for (const [k, v] of Object.entries(value as Record<string, string>)) {
+            if (!k.startsWith("--")) {
+                element.style[k as keyof JSX.CSSStyles] = v;
+            } else {
+                element.style.setProperty(k, v);
+            }
+        }
+    }
+
+    if (typeof value === "string" && !key.startsWith("$")) {
+        element.setAttribute(key, value);
+        return;
+    }
+
+    if (typeof value === "boolean" || typeof value === "undefined" || value === null) {
+        if (value) {
+            element.setAttribute(key, "");
+        } else if (previousValue) {
+            element.removeAttribute(key);
+        }
+
+        return;
+    }
+
+    if (__DEV__) {
+        __LOG__("info", "Unassignable prop", key, value);
+    }
+};
+
 export const createHydrate = (hydrate: NodeHydrate, context: HydrateContext) => {
     const element = context.target.createElement(hydrate.from.element.tag);
     const props = hydrate.from.element.props ?? {};
 
     for (const key in props) {
         if (props[key] !== undefined) {
-            element.setAttribute(key, props[key]);
+            setAttribute(element, key, props[key]);
         }
     }
 
@@ -87,13 +131,13 @@ export const updateHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
             if (!(key in newSet) || newSet[key] === undefined) {
                 element.removeAttribute(key);
             } else if (newSet[key] !== existingSet[key]) {
-                element.setAttribute(key, newSet[key]);
+                setAttribute(element, key, newSet[key], existingSet[key]);
             }
         }
 
         for (const key in newSet) {
             if (!(key in existingSet) && newSet[key] !== undefined) {
-                element.setAttribute(key, newSet[key]);
+                setAttribute(element, key, newSet[key]);
             }
         }
 
@@ -120,13 +164,14 @@ export const updateTextHydrate = (hydrate: TextHydrate, context: HydrateContext)
         createTextHydrate(hydrate, context);
     } else {
         const element = hydrate.previous.node!;
+        if (hydrate.previous.from.value !== hydrate.from.value) {
+            element.textContent = hydrate.from.value;
 
-        element.textContent = hydrate.from.value;
+            if (element.nextSibling !== (hydrate.right?.node ?? null)) {
+                hydrate.parent.node?.removeChild(element);
 
-        if (element.nextSibling !== (hydrate.right?.node ?? null)) {
-            hydrate.parent.node?.removeChild(element);
-
-            insertSelf(hydrate, element);
+                insertSelf(hydrate, element);
+            }
         }
 
         hydrate.node = element;

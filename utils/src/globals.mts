@@ -4,6 +4,10 @@
 // remove any unreachable code
 
 declare global {
+    interface EffectualState {
+        hooks: Map<string, Set<(...args: any[]) => void>>;
+    }
+
     /* eslint-disable no-var */
     type LogLevel = "debug" | "info" | "warn" | "error";
 
@@ -19,9 +23,7 @@ declare global {
      */
     var __ASSERT__: (condition: boolean, message: string) => void;
 
-    var __effectual__: {
-        hooks: Map<string, Set<(...args: any[]) => void>>;
-    };
+    var __effectual__: EffectualState;
 
     var __TRIGGER__: (hook: string, ...args: any[]) => void;
     var __HOOK__: (hook: string, callback: (...args: any[]) => void) => void;
@@ -34,6 +36,7 @@ globalThis.__DEV__ = true;
 globalThis.__LOG_LEVEL__ = "warn";
 globalThis.__HOOK__ = () => {};
 globalThis.__UNHOOK__ = () => {};
+globalThis.__effectual__ ??= {} as EffectualState;
 
 if (__DEV__) {
     globalThis.__ASSERT__ = (condition: boolean, message: string) => {
@@ -42,9 +45,7 @@ if (__DEV__) {
         }
     };
 
-    globalThis.__effectual__ = {
-        hooks: new Map(),
-    };
+    globalThis.__effectual__.hooks = new Map();
 
     globalThis.__TRIGGER__ = (hook: string, ...args) => {
         const callbacks = globalThis.__effectual__.hooks.get(hook);

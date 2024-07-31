@@ -1,4 +1,4 @@
-function createElement(tag, props, ...children) {
+function createElement(tag, attrs, ...children) {
     if (tag === fragmentId) {
         return {
             kind: "fragment",
@@ -11,17 +11,30 @@ function createElement(tag, props, ...children) {
         };
     }
     if (typeof tag === "function") {
+        const props = {};
+        const emits = {};
+        let hasEmits = false;
+        for (const key in attrs) {
+            if (key.startsWith("$on:")) {
+                emits[key.slice(4)] = attrs[key];
+                hasEmits = true;
+            }
+            else {
+                props[key] = attrs[key];
+            }
+        }
         return {
             kind: "custom",
             element: tag,
-            props: props ?? undefined,
+            props,
+            emits: hasEmits ? emits : undefined,
             children,
         };
     }
     return {
         kind: "native",
         tag,
-        props: props ?? undefined,
+        props: attrs ?? undefined,
         children,
     };
 }
@@ -35,15 +48,14 @@ globalThis.__DEV__ = true;
 globalThis.__LOG_LEVEL__ = "warn";
 globalThis.__HOOK__ = () => { };
 globalThis.__UNHOOK__ = () => { };
+globalThis.__effectual__ ??= {};
 if (__DEV__) {
     globalThis.__ASSERT__ = (condition, message) => {
         if (!condition) {
             throw new Error(message);
         }
     };
-    globalThis.__effectual__ = {
-        hooks: new Map(),
-    };
+    globalThis.__effectual__.hooks = new Map();
     globalThis.__TRIGGER__ = (hook, ...args) => {
         const callbacks = globalThis.__effectual__.hooks.get(hook);
         if (callbacks !== undefined) {
@@ -142,6 +154,235 @@ const memoItemsAreEqual = (a, b) => {
     return true;
 };
 
+class GenerationalMap {
+    map = new Map();
+    generation = 0;
+    generationList = [];
+    set(key, value) {
+        this.generationList.push({ generation: this.generation, key, previous: this.map.get(key) });
+        this.map.set(key, value);
+    }
+    get(key) {
+        return this.map.get(key);
+    }
+    pushGeneration() {
+        this.generation += 1;
+    }
+    popGeneration() {
+        const gen = this.generation;
+        this.generation -= 1;
+        let i = this.generationList.length - 1;
+        for (; i >= 0; i--) {
+            const el = this.generationList[i];
+            if (el.generation === gen) {
+                if (el.previous) {
+                    this.map.set(el.key, el.previous);
+                }
+                else {
+                    this.map.delete(el.key);
+                }
+            }
+        }
+        this.generationList.splice(i + 1);
+    }
+}
+
+const e = (globalThis.__effectual__ ??= {});
+e.currentContext = null;
+e.currentStateContext = null;
+e.stateMap = new WeakMap();
+e.dependencyMap = new WeakMap();
+e.elementCache = new WeakMap();
+e.dirtySet = new Set();
+e.isDirty = false;
+e._devIdCounter = 0;
+const generateDevId = () => {
+    e._devIdCounter += 1;
+    return { id: e._devIdCounter };
+};
+const getNewIdentity = () => {
+    if (__DEV__) {
+        return generateDevId();
+    }
+    return Object.create(null);
+};
+const setCurrentContext = (id) => {
+    e.currentContext = id;
+};
+const pushCurrentStateContext = (id) => {
+    if (!e.currentStateContext) {
+        return;
+    }
+    e.currentStateContext.pushGeneration();
+    const stateElements = e.stateMap.get(id);
+    if (stateElements) {
+        for (const [stateId, state] of stateElements) {
+            state.tick();
+            e.currentStateContext.set(stateId, state);
+        }
+    }
+};
+const popCurrentStateContext = () => {
+    if (!e.currentStateContext) {
+        return;
+    }
+    e.currentStateContext.popGeneration();
+};
+const resetDependencyState = () => {
+    e.currentStateContext = new GenerationalMap();
+};
+const resetDirtyState = () => {
+    e.dirtySet = new Set();
+    e.isDirty = false;
+};
+const reconcileEmits = (id, emits) => {
+    if (!emits) {
+        return;
+    }
+    if (!e.elementCache.has(id)) {
+        e.elementCache.set(id, new ElementCache());
+    }
+    const cache = e.elementCache.get(id);
+    const result = Object.create(null);
+    for (const key in emits) {
+        result[key] = (...args) => {
+            const fn = cache.getLatest(key);
+            if (__DEV__) {
+                if (!fn) {
+                    throw new Error(`Unable to find emit: ${key}`);
+                }
+                if (args.length > fn.length) {
+                    __LOG__("warn", `Received ${args.length} arguments but expected ${fn.length}`);
+                }
+            }
+            return fn?.(...args);
+        };
+    }
+    cache.update(emits);
+    return result;
+};
+const isElementDirty = (id) => {
+    const personalStores = e.stateMap.get(id);
+    if (personalStores) {
+        for (const [_storeId, state] of personalStores) {
+            if (e.dirtySet.has(state.id)) {
+                return true;
+            }
+        }
+    }
+    const dependencies = e.dependencyMap.get(id);
+    if (dependencies) {
+        for (const dependency of dependencies) {
+            if (e.dirtySet.has(dependency)) {
+                return true;
+            }
+        }
+    }
+    return false;
+};
+class BaseStore {
+    id;
+    default;
+    constructor(default_) {
+        this.id = getNewIdentity();
+        this.default = default_;
+    }
+    provide() {
+        const element = e.currentContext;
+        if (!e.stateMap.has(element)) {
+            e.stateMap.set(element, new Map());
+        }
+        if (e.stateMap.get(element)?.has(this.id)) {
+            return new StateContainer(e.stateMap.get(element)?.get(this.id));
+        }
+        const container = new _StateContainer(this.default);
+        e.stateMap.get(element)?.set(this.id, container);
+        e.currentStateContext?.set(this.id, container);
+        return new StateContainer(container);
+    }
+    useContainer() {
+        const container = e.currentStateContext?.get(this.id);
+        const currentRenderer = e.currentContext;
+        if (!currentRenderer) {
+            __LOG__("warn", "Can't invoke `use` outside of a render function.");
+            return undefined;
+        }
+        if (!container) {
+            __LOG__("warn", "Trying to use container that hasn't been provided");
+            return undefined;
+        }
+        if (!e.dependencyMap.has(currentRenderer)) {
+            e.dependencyMap.set(currentRenderer, new Set());
+        }
+        e.dependencyMap.get(currentRenderer)?.add(container.id);
+        return container;
+    }
+}
+class _StateContainer {
+    #currentValue;
+    #nextValue;
+    #dirty = false;
+    #stateId;
+    constructor(default_) {
+        this.#currentValue = default_;
+        this.#nextValue = default_;
+        this.#stateId = getNewIdentity();
+    }
+    setValue(value) {
+        this.#nextValue = value;
+        if (!this.#dirty) {
+            e.dirtySet.add(this.#stateId);
+            this.#dirty = true;
+            e.isDirty = true;
+        }
+    }
+    getValue() {
+        return this.#currentValue;
+    }
+    getNextValue() {
+        return this.#nextValue;
+    }
+    tick() {
+        if (this.#dirty) {
+            this.#dirty = false;
+            this.#currentValue = this.#nextValue;
+        }
+    }
+    get id() {
+        return this.#stateId;
+    }
+    toString() {
+        return `StateContainer(dirty=${this.#dirty}, current=${this.#currentValue}, next=${this.#nextValue})`;
+    }
+}
+class StateContainer {
+    #base;
+    constructor(container) {
+        this.#base = container;
+    }
+    getValue() {
+        return this.#base.getValue();
+    }
+    set(cb) {
+        this.#base.setValue(cb(this.#base.getNextValue()));
+    }
+    setValue(value) {
+        return this.#base.setValue(value);
+    }
+}
+class ElementCache {
+    #current;
+    constructor() {
+        this.#current = {};
+    }
+    getLatest(key) {
+        return this.#current[key];
+    }
+    update(values) {
+        this.#current = values;
+    }
+}
+
 /**
  * Given a newly invoked source element and a previous expansion, determine whether
  * the new element would produce the same output as the previous element by checking the
@@ -229,11 +470,16 @@ const expandClean = (element, context) => {
         return expandDirty(element.element, { ...context, previousRoot: element });
     }
     if (element.kind === "child") {
+        const isDirty = isElementDirty(element.identity);
+        if (isDirty) {
+            return expandDirty(element.element, { ...context, previousRoot: element });
+        }
         const newStack = [{ element: element.element, clean: true }, ...context.lexicalScopeStack];
         return {
             kind: "child",
             element: element.element,
             memoKey: element.memoKey,
+            identity: element.identity,
             result: element.result.map(([key, child]) => {
                 const newContext = { lexicalScopeStack: newStack, previousRoot: child };
                 return [key, expandClean(child, newContext)];
@@ -274,7 +520,7 @@ const expandDirty = (currentRoot, context) => {
         };
     }
     if (currentRoot.kind === "custom") {
-        const isDirty = false; // TODO(zwade for zwade): Implement me
+        const isDirty = previousRoot?.kind === "child" && isElementDirty(previousRoot.identity);
         const newStack = [{ element: currentRoot, clean: false }, ...context.lexicalScopeStack];
         if (previousRoot &&
             previousRoot.kind === "child" &&
@@ -284,9 +530,11 @@ const expandDirty = (currentRoot, context) => {
                 __LOG__("debug", "Reusing", currentRoot);
                 __TRIGGER__("expansion_reuse", currentRoot, context);
             }
+            reconcileEmits(previousRoot.identity, currentRoot.emits);
             return {
                 kind: "child",
                 element: currentRoot,
+                identity: previousRoot.identity,
                 memoKey: previousRoot.memoKey,
                 result: previousRoot.result.map(([key, child]) => [
                     key,
@@ -294,25 +542,42 @@ const expandDirty = (currentRoot, context) => {
                 ]),
             };
         }
+        // This code is repeated thrice -- how do i abstract it out?
+        let oldChildren = undefined;
+        let identity;
+        if (previousRoot && previousRoot.kind === "child") {
+            oldChildren = previousRoot.result;
+            identity = previousRoot.identity;
+        }
+        else {
+            identity = getNewIdentity();
+        }
         if (__DEV__) {
             __LOG__("debug", "Instantiating", currentRoot);
             __TRIGGER__("expansion_new", currentRoot, context);
         }
-        const instantiation = currentRoot.element(currentRoot.props ?? {});
-        // This code is repeated thrice -- how do i abstract it out?
-        let oldChildren = undefined;
-        if (previousRoot && previousRoot.kind === "child") {
-            oldChildren = previousRoot.result;
+        setCurrentContext(identity);
+        pushCurrentStateContext(identity);
+        let instantiation;
+        try {
+            const emits = reconcileEmits(identity, currentRoot.emits);
+            instantiation = currentRoot.element(currentRoot.props ?? {}, emits);
         }
-        return {
+        finally {
+            setCurrentContext(null);
+        }
+        const result = {
             kind: "child",
             element: currentRoot,
+            identity,
             memoKey: memoizeItem(currentRoot.props),
             result: flattenElement(instantiation).map(([key, child]) => {
                 const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
                 return [key, expandDirty(child, { previousRoot: extantChild, lexicalScopeStack: newStack })];
             }),
         };
+        popCurrentStateContext();
+        return result;
     }
     if (currentRoot.kind === "native") {
         let oldChildren = undefined;
@@ -364,7 +629,10 @@ const expand = (currentRoot, previousRoot) => {
     if (typeof currentRoot !== "object" || Array.isArray(currentRoot) || currentRoot?.kind !== "custom") {
         throw new Error("Root element must be a custom element");
     }
-    return expandDirty(currentRoot, { lexicalScopeStack: [], previousRoot });
+    resetDependencyState();
+    const result = expandDirty(currentRoot, { lexicalScopeStack: [], previousRoot });
+    resetDirtyState();
+    return result;
 };
 
 function insertSelf(hydrate, element) {
@@ -390,12 +658,49 @@ function insertSelf(hydrate, element) {
     // from the function signature that this must be correct
     hydrate.node = element;
 }
+const setAttribute = (element, key, value, previousValue) => {
+    if (key.startsWith("$on:") && typeof value === "function") {
+        const eventName = key.slice(4).toLowerCase();
+        if (typeof previousValue === "function") {
+            element.removeEventListener(eventName, previousValue);
+        }
+        element.addEventListener(eventName, value);
+        return;
+    }
+    if (typeof value === "object" && key === "style") {
+        element.style.cssText = "";
+        for (const [k, v] of Object.entries(value)) {
+            if (!k.startsWith("--")) {
+                element.style[k] = v;
+            }
+            else {
+                element.style.setProperty(k, v);
+            }
+        }
+    }
+    if (typeof value === "string" && !key.startsWith("$")) {
+        element.setAttribute(key, value);
+        return;
+    }
+    if (typeof value === "boolean" || typeof value === "undefined" || value === null) {
+        if (value) {
+            element.setAttribute(key, "");
+        }
+        else if (previousValue) {
+            element.removeAttribute(key);
+        }
+        return;
+    }
+    if (__DEV__) {
+        __LOG__("info", "Unassignable prop", key, value);
+    }
+};
 const createHydrate = (hydrate, context) => {
     const element = context.target.createElement(hydrate.from.element.tag);
     const props = hydrate.from.element.props ?? {};
     for (const key in props) {
         if (props[key] !== undefined) {
-            element.setAttribute(key, props[key]);
+            setAttribute(element, key, props[key]);
         }
     }
     insertSelf(hydrate, element);
@@ -415,12 +720,12 @@ const updateHydrate = (hydrate, context) => {
                 element.removeAttribute(key);
             }
             else if (newSet[key] !== existingSet[key]) {
-                element.setAttribute(key, newSet[key]);
+                setAttribute(element, key, newSet[key], existingSet[key]);
             }
         }
         for (const key in newSet) {
             if (!(key in existingSet) && newSet[key] !== undefined) {
-                element.setAttribute(key, newSet[key]);
+                setAttribute(element, key, newSet[key]);
             }
         }
         if (element.nextSibling !== (hydrate.right?.node ?? null)) {
@@ -443,10 +748,12 @@ const updateTextHydrate = (hydrate, context) => {
     }
     else {
         const element = hydrate.previous.node;
-        element.textContent = hydrate.from.value;
-        if (element.nextSibling !== (hydrate.right?.node ?? null)) {
-            hydrate.parent.node?.removeChild(element);
-            insertSelf(hydrate, element);
+        if (hydrate.previous.from.value !== hydrate.from.value) {
+            element.textContent = hydrate.from.value;
+            if (element.nextSibling !== (hydrate.right?.node ?? null)) {
+                hydrate.parent.node?.removeChild(element);
+                insertSelf(hydrate, element);
+            }
         }
         hydrate.node = element;
         hydrate.previous = undefined;
@@ -475,6 +782,19 @@ const deleteHydrate = (hydrate, _context) => {
         hydrate.parent.node?.removeChild(hydrate.node);
     }
 };
+
+class Store extends BaseStore {
+    use() {
+        const container = this.useContainer();
+        if (container) {
+            return container.getValue();
+        }
+        return this.default;
+    }
+    static create(default_) {
+        return new Store(default_);
+    }
+}
 
 const fullyFlattenExpansion = (children, keyPrefix = "", acc = []) => {
     for (let i = 0; i < children.length; i++) {
@@ -595,13 +915,20 @@ const Blog = () => {
                 F._jsx("a", { href: "https://dttw.tech/posts/Bn_yOwnTo", target: "_blank" }, "Part 1: Rend(er) me Asunder")))));
 };
 
+const Shown = Store.create(true);
 const FaqItem = (props) => {
-    return (F._jsx("div", { style: "margin-bottom: 1rem; margin-left: 1rem;" },
-        F._jsx("details", { open: true },
-            F._jsx("summary", null,
-                F._jsx("h3", { style: "display: inline-block" }, props.title)),
-            F._jsx("div", null,
-                F._jsx("slot", null)))));
+    const shown = Shown.provide();
+    return (F._jsx("div", { style: { marginBottom: "1rem", marginLeft: "1rem", cursor: "pointer" } },
+        F._jsx("div", { open: shown.getValue(), "$on:click": (e) => {
+                shown.set((val) => !val);
+                e.preventDefault();
+            } },
+            F._jsx("h3", { style: { display: "inline-block" } },
+                shown.getValue() ? "⬇" : "⮕",
+                " ",
+                props.title),
+            shown.getValue() ? (F._jsx("div", null,
+                F._jsx("slot", null))) : null)));
 };
 
 const Faq = () => {
@@ -618,6 +945,14 @@ const Faq = () => {
             " ",
             F._jsx("a", { href: "https://github.com/zwade/effectual", target: "_blank" }, "github.com/zwade/effectual"),
             "!")));
+};
+
+const Footer = () => {
+    const count = Count.use();
+    return F._jsx("div", null,
+        "Copyright \u00A9",
+        2024 + count,
+        " Zach Wade");
 };
 
 const Header = () => {
@@ -637,29 +972,43 @@ const ProgressItem = (props) => {
 const Progress = () => (F._jsx(F._fragment, null,
     F._jsx("h2", null, "Effectual Progress"),
     F._jsx(ProgressItem, { complete: true }, "Render Engine"),
-    F._jsx(ProgressItem, null, "Reconciler"),
-    F._jsx(ProgressItem, null, "Reactivity Engine"),
+    F._jsx(ProgressItem, { complete: true }, "Reconciler"),
+    F._jsx(ProgressItem, { complete: true }, "Reactivity Engine"),
+    F._jsx(ProgressItem, null, "Effect Support"),
     F._jsx(ProgressItem, null, "Style Support"),
     F._jsx(ProgressItem, null, "Data Loading")));
 
-const RerenderStatus = (props) => {
-    return (F._jsx("div", { class: "header" },
-        "This page has been rerendered ",
-        props.count,
-        " times.",
-        " ",
-        F._jsx("button", { onclick: "window.reconciler()" }, "Click here to rerender.")));
+const RerenderAction = (props, emits) => {
+    return (F._jsx("div", { class: `${props.className ?? ""} rerender-action` },
+        F._jsx("button", { "$on:click": () => emits.click?.() },
+            F._jsx("slot", null))));
 };
 
+const RerenderStatus = (props) => {
+    const count = Count.use();
+    return F._jsx("div", { class: "header" },
+        "This page has been rerendered ",
+        count,
+        " times.");
+};
+
+const Count = Store.create(0);
 const App = (props) => {
-    const sections = [F._jsx(Blog, { key: "blog" }), F._jsx(Progress, { key: "progress" }), F._jsx(Faq, { key: "faq" })];
-    const toRender = [...sections.slice(props.count % 3), ...sections.slice(0, props.count % 3)];
-    console.log(toRender);
-    console.log("Rerendering");
+    const count = Count.provide();
+    const cachedCountValue = count.getValue();
+    const onClick = () => {
+        console.log("Previous count:", cachedCountValue);
+        count.setValue(count.getValue() + 1);
+    };
     return (F._jsx("div", { style: "font-family: sans-serif;" },
         F._jsx(Header, null),
-        F._jsx(RerenderStatus, { count: props.count }),
-        toRender));
+        F._jsx(RerenderStatus, null),
+        F._jsx(RerenderAction, { className: "test-button", "$on:click": onClick },
+            F._jsx("b", null, "Click to re-render")),
+        F._jsx(Blog, null),
+        F._jsx(Progress, null),
+        F._jsx(Faq, null),
+        F._jsx(Footer, null)));
 };
 
 const buildReconciliationLoop = (rootEl) => {
@@ -669,16 +1018,20 @@ const buildReconciliationLoop = (rootEl) => {
     };
     let lastPass = undefined;
     let lastReconciliation = undefined;
-    let count = 0;
     const reReconcile = () => {
-        const nextPass = expand(F._jsx(App, { count: count }), lastPass);
+        if (lastPass && !window.__effectual__.isDirty) {
+            requestAnimationFrame(reReconcile);
+            return;
+        }
+        const nextPass = expand(F._jsx(App, null), lastPass);
         const nextReconciliation = reconcile(nextPass, root, document, lastReconciliation);
         lastPass = nextPass;
         lastReconciliation = nextReconciliation;
-        count += 1;
+        requestAnimationFrame(reReconcile);
     };
-    return reReconcile;
+    requestAnimationFrame(reReconcile);
 };
-const reconciler = buildReconciliationLoop(document.getElementById("root"));
-window.reconciler = reconciler;
-reconciler();
+__HOOK__("expansion_new", (root) => {
+    __LOG__("info", "Expanding element", root.element.name);
+});
+buildReconciliationLoop(document.getElementById("root"));

@@ -17,8 +17,9 @@ export const Progress = () => (
     <>
         <h2>Effectual Progress</h2>
         <ProgressItem complete>Render Engine</ProgressItem>
-        <ProgressItem>Reconciler</ProgressItem>
-        <ProgressItem>Reactivity Engine</ProgressItem>
+        <ProgressItem complete>Reconciler</ProgressItem>
+        <ProgressItem complete>Reactivity Engine</ProgressItem>
+        <ProgressItem>Effect Support</ProgressItem>
         <ProgressItem>Style Support</ProgressItem>
         <ProgressItem>Data Loading</ProgressItem>
     </>

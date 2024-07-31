@@ -1,28 +1,40 @@
-import { F } from "@effectualjs/core";
+import { F, Store } from "@effectualjs/core";
 
 import { Blog } from "./Blog.js";
 import { Faq } from "./Faq.js";
+import { Footer } from "./Footer.js";
 import { Header } from "./Header.js";
 import { Progress } from "./Progress.js";
-import { RerenderStatus } from "./RerenderStatus.js";
+import { RerenderAction } from "./RerenderAction.js";
+import { RerenderStatus } from "./RerenderCount.js";
 
-export interface Props {
-    count: number;
-}
+export interface Props {}
+
+export const Count = Store.create(0);
 
 export const App = (props: Props) => {
-    const sections = [<Blog key="blog" />, <Progress key="progress" />, <Faq key="faq" />];
+    const count = Count.provide();
 
-    const toRender = [...sections.slice(props.count % 3), ...sections.slice(0, props.count % 3)];
-    console.log(toRender);
-    console.log("Rerendering");
+    const cachedCountValue = count.getValue();
+    const onClick = () => {
+        console.log("Previous count:", cachedCountValue);
+        count.setValue(count.getValue() + 1);
+    };
 
     return (
         <div style="font-family: sans-serif;">
             <Header />
-            <RerenderStatus count={props.count} />
 
-            {toRender}
+            <RerenderStatus />
+            <RerenderAction className="test-button" $on:click={onClick}>
+                <b>Click to re-render</b>
+            </RerenderAction>
+
+            <Blog />
+            <Progress />
+            <Faq />
+
+            <Footer />
         </div>
     );
 };

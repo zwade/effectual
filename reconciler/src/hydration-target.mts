@@ -13,6 +13,9 @@ export interface HTContentNode<T extends HTNode<T> = OpaqueHTNode> extends HTBas
     removeChild(content: T): void;
     setAttribute(key: string, value: string): void;
     removeAttribute(key: string): void;
+    addEventListener(eventName: string, callback: () => void): void;
+    removeEventListener(eventName: string, callback: () => void): void;
+    style: HTCSSStyleDeclaration<T>;
 }
 
 export interface HTTextNode<T extends HTNode<T> = OpaqueHTNode> extends HTBaseNode<T> {
@@ -20,6 +23,11 @@ export interface HTTextNode<T extends HTNode<T> = OpaqueHTNode> extends HTBaseNo
 }
 
 export type HTNode<T extends HTNode<T> = OpaqueHTNode> = HTContentNode<T> | HTTextNode<T>;
+
+export type HTCSSStyleDeclaration<T extends HTNode<T> = OpaqueHTNode> = {
+    setProperty(key: string, value: string): void;
+    cssText: string;
+} & JSX.CSSStyles;
 
 export type OpaqueHydrationTarget = HydrationTarget<OpaqueHTNode>;
 export type OpaqueHTBaseNode = HTBaseNode<OpaqueHTNode>;

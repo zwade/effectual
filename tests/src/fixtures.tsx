@@ -63,7 +63,6 @@ export const A = (props: AProps) => {
 };
 
 const noop = (strings: TemplateStringsArray, ...values: any[]) => {
-    console.log(strings, values);
     return (
         strings
             .slice(0, -1)

@@ -29,6 +29,7 @@ export {
     OpaqueHydrationTarget,
 } from "./hydration-target.mjs";
 export { MockHTContentNode, MockHTNode, MockHTTextNode } from "./mock-target.mjs";
+export { AssignableStore, Store } from "./reactivity-utils.mjs";
 export { fullyFlattenExpansion, reconcile, ReconciliationChild, ReconciliationEntry } from "./reconciler.mjs";
 export { render } from "./render.mjs";
 

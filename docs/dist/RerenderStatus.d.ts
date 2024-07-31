@@ -1,4 +1,6 @@
 export interface Props {
-    count: number;
 }
-export declare const RerenderStatus: (props: Props) => import("@effectualjs/reconciler/dist/elements.mjs").EffectualElement;
+export interface Emits {
+    click: () => void;
+}
+export declare const RerenderStatus: (props: Props, emits: Emits) => import("@effectualjs/reconciler/dist/elements.mjs").EffectualElement;

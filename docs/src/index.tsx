@@ -1,12 +1,4 @@
-import {
-    EffectualSourceElement,
-    expand,
-    F,
-    reconcile,
-    ReconciliationChild,
-    render,
-    RootHydrate,
-} from "@effectualjs/core";
+import { expand, F, reconcile, ReconciliationChild, RootHydrate } from "@effectualjs/core";
 import { ExpansionEntry } from "@effectualjs/reconciler/dist/expansion.mjs";
 
 import { App } from "./App.js";
@@ -19,20 +11,26 @@ const buildReconciliationLoop = (rootEl: HTMLElement) => {
 
     let lastPass: ExpansionEntry | undefined = undefined;
     let lastReconciliation: ReconciliationChild[] | undefined = undefined;
-    let count = 0;
 
     const reReconcile = () => {
-        const nextPass = expand(<App count={count} />, lastPass);
+        if (lastPass && !window.__effectual__.isDirty) {
+            requestAnimationFrame(reReconcile);
+            return;
+        }
+
+        const nextPass = expand(<App />, lastPass);
         const nextReconciliation = reconcile(nextPass, root, document, lastReconciliation);
 
         lastPass = nextPass;
         lastReconciliation = nextReconciliation;
-        count += 1;
+        requestAnimationFrame(reReconcile);
     };
 
-    return reReconcile;
+    requestAnimationFrame(reReconcile);
 };
 
-const reconciler = buildReconciliationLoop(document.getElementById("root")!);
-(window as any).reconciler = reconciler;
-reconciler();
+__HOOK__("expansion_new", (root) => {
+    __LOG__("info", "Expanding element", root.element.name);
+});
+
+buildReconciliationLoop(document.getElementById("root")!);

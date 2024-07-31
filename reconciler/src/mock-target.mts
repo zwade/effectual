@@ -96,6 +96,18 @@ export class MockHTContentNode extends MockHTBaseNode implements HTContentNode<M
         }
     }
 
+    public addEventListener(_eventName: string, _callback: () => void): void {
+        // pass
+    }
+
+    public removeEventListener(_eventName: string, _callback: () => void): void {
+        // pass
+    }
+
+    public get style() {
+        return { cssText: "", setProperty() {} };
+    }
+
     public toString(): string {
         const children = this.children.map((child) => child.toString()).join("");
         const props = this.attributes

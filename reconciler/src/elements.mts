@@ -2,8 +2,8 @@
  * An EffectualComponent is a function that returns any kind of valid EffectualElement.
  * It can be used to instantiate a new component via TSX.
  */
-export interface EffectualComponent<Props extends Record<string, any>> {
-    (props?: Props): JSX.Element;
+export interface EffectualComponent<Props extends Record<string, any> = any, Emits extends Record<string, any> = any> {
+    (props?: Props, emits?: Emits): JSX.Element;
 }
 
 /**
@@ -26,6 +26,7 @@ export type EffectualSourceElement = {
     kind: "custom";
     element: EffectualComponent<any>;
     props?: Record<string, any>;
+    emits?: Record<string, any>;
     children: EffectualElement[];
 };
 
@@ -99,7 +100,7 @@ export function createElement(
 ): EffectualFragment;
 export function createElement(
     tag: string | EffectualComponent<any> | typeof fragmentId,
-    props: Record<string, any> | null,
+    attrs: Record<string, any> | null,
     ...children: EffectualElement[]
 ): EffectualElement {
     if (tag === fragmentId) {
@@ -116,10 +117,25 @@ export function createElement(
     }
 
     if (typeof tag === "function") {
+        const props: Record<string, any> = {};
+        const emits: Record<string, any> = {};
+
+        let hasEmits = false;
+
+        for (const key in attrs) {
+            if (key.startsWith("$on:")) {
+                emits[key.slice(4)] = attrs[key];
+                hasEmits = true;
+            } else {
+                props[key] = attrs[key];
+            }
+        }
+
         return {
             kind: "custom",
             element: tag,
-            props: props ?? undefined,
+            props,
+            emits: hasEmits ? emits : undefined,
             children,
         };
     }
@@ -127,7 +143,7 @@ export function createElement(
     return {
         kind: "native",
         tag,
-        props: props ?? undefined,
+        props: attrs ?? undefined,
         children,
     };
 }
@@ -140,20 +156,35 @@ declare global {
          * The structure of all native components.
          * This is not currently implemented.
          */
+        type CSSStyles = {
+            [K in keyof CSSStyleDeclaration as CSSStyleDeclaration[K] extends string ? K : never]?: string;
+        };
+
         type IntrinsicElements = {
-            [K in keyof HTMLElementTagNameMap]: Record<string, any>;
+            [K in keyof HTMLElementTagNameMap]: Record<string, any> & {
+                "$on:click"?: (e: MouseEvent) => boolean | void;
+                "$on:mousedown"?: (e: MouseEvent) => boolean | void;
+                "$on:mouseup"?: (e: MouseEvent) => boolean | void;
+                class?: string;
+                style?: string | CSSStyles;
+            };
         };
 
         /**
          * Those props that are available to every component.
          */
-        interface IntrinsicAttributes {
+        type IntrinsicAttributes = {
             key?: string | number | boolean | null;
-        }
+        };
 
         /**
          * What an "element" is in the context of JSX.
          */
         type Element = EffectualElement;
+
+        type LibraryManagedAttributes<C, P> = P &
+            (C extends (p: any, emits: infer Emits) => any
+                ? { [Emit in keyof Emits as Emit extends string ? `$on:${Emit}` : never]: Emits[Emit] }
+                : {});
     }
 }
