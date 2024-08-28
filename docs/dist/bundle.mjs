@@ -300,7 +300,7 @@ class BaseStore {
         this.id = getNewIdentity();
         this.default = default_;
     }
-    provide() {
+    $provide() {
         const element = e.currentContext;
         if (!e.stateMap.has(element)) {
             e.stateMap.set(element, new Map());
@@ -483,6 +483,7 @@ const expandClean = (element, context) => {
             memoKey: element.memoKey,
             element: element.element,
             children: element.children.map(([key, child]) => [key, expandClean(child, context)]),
+            dirty: false,
         };
     }
     if (element.kind === "slot-portal") {
@@ -611,6 +612,7 @@ const expandDirty = (currentRoot, context) => {
                 const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
                 return [key, expandDirty(child, { ...context, previousRoot: extantChild })];
             }),
+            dirty: true,
         };
     }
     if (currentRoot.kind === "slot") {
@@ -716,6 +718,10 @@ const setAttribute = (element, key, value, previousValue) => {
     }
 };
 const createHydrate = (hydrate, context) => {
+    if (__DEV__) {
+        __LOG__("info", "create_hydrate", hydrate);
+        __TRIGGER__("create_hydrate", hydrate, context);
+    }
     const element = context.target.createElement(hydrate.from.element.tag);
     const props = hydrate.from.element.props ?? {};
     for (const key in props) {
@@ -732,6 +738,10 @@ const updateHydrate = (hydrate, context) => {
         createHydrate(hydrate, context);
     }
     else {
+        if (__DEV__) {
+            __LOG__("info", "update_hydrate", hydrate);
+            __TRIGGER__("update_hydrate", hydrate, context);
+        }
         const existingSet = hydrate.previous.from.element.props ?? {};
         const newSet = hydrate.from.element.props ?? {};
         const element = hydrate.previous.node;
@@ -757,6 +767,10 @@ const updateHydrate = (hydrate, context) => {
     }
 };
 const createTextHydrate = (hydrate, context) => {
+    if (__DEV__) {
+        __LOG__("info", "creating_text_hydrate", hydrate);
+        __TRIGGER__("create_text_hydrate", hydrate, context);
+    }
     const element = context.target.createTextNode(hydrate.from.value);
     insertSelf(hydrate, element);
 };
@@ -767,6 +781,10 @@ const updateTextHydrate = (hydrate, context) => {
         createTextHydrate(hydrate, context);
     }
     else {
+        if (__DEV__) {
+            __LOG__("info", "update_text_hydrate", hydrate);
+            __TRIGGER__("update_text_hydrate", hydrate, context);
+        }
         const element = hydrate.previous.node;
         if (hydrate.previous.from.value !== hydrate.from.value) {
             element.textContent = hydrate.from.value;
@@ -804,7 +822,7 @@ const deleteHydrate = (hydrate, _context) => {
 };
 
 class Store extends BaseStore {
-    use() {
+    $use() {
         const container = this.useContainer();
         if (container) {
             return container.getValue();
@@ -848,16 +866,21 @@ const reconcileChildren = (children, context) => {
         delete previousElementsByKey[key];
         let newNode;
         if (child.kind === "dom-element") {
+            const isClean = !child.dirty && previousChild.kind === "dom-element";
             const parent = {
                 kind: "node",
                 parent: context.parent,
                 previous: previousChild?.node,
                 from: child,
                 right: rightSibling,
+                node: isClean ? previousChild.node.node : undefined,
             };
             const flatChildren = fullyFlattenExpansion(child.children);
             const previousChildren = previousChild?.kind === "dom-element" ? previousChild.children : undefined;
-            context.updateSchedule.push(parent);
+            if (!isClean) {
+                // Only bother re-processing if something changed
+                context.updateSchedule.push(parent);
+            }
             const newChild = reconcileChildren(flatChildren, {
                 parent,
                 updateSchedule: context.updateSchedule,
@@ -932,13 +955,13 @@ const Blog = () => {
 
 const Shown = Store.create(false);
 const FaqItem = (_props, ctx) => {
-    const shown = Shown.provide();
-    return (F._jsx("div", { style: { marginBottom: "1rem", marginLeft: "1rem", cursor: "pointer" } },
-        F._jsx("div", { open: shown.getValue(), "$on:click": (e) => {
-                shown.set((val) => !val);
-                e.preventDefault();
-            } },
-            F._jsx("h3", { style: { display: "inline-block" } },
+    const shown = Shown.$provide();
+    return (F._jsx("div", { style: { marginBottom: "1rem", marginLeft: "1rem" } },
+        F._jsx("div", null,
+            F._jsx("h3", { style: { display: "inline-block", cursor: "pointer" }, "$on:click": (e) => {
+                    shown.set((val) => !val);
+                    e.preventDefault();
+                } },
                 shown.getValue() ? "⬇" : "⮕",
                 " ",
                 ctx.slots.title),
@@ -962,11 +985,16 @@ const Faq = () => {
             "Check out the github repository at",
             " ",
             F._jsx("a", { href: "https://github.com/zwade/effectual", target: "_blank" }, "github.com/zwade/effectual"),
-            "!")));
+            "!"),
+        F._jsx(FaqItem, { "$slot:title": "Why did you make it?" },
+            "As a way to both understand better how modern web frameworks work, and to help convey that knowledge to others.",
+            F._jsx(FaqItem, { "$slot:title": "Ok but why did you realllllly make it?" },
+                "Uhhhhh, I thought it would be a fun way to give back to the community",
+                F._jsx(FaqItem, { "$slot:title": "..." }, "Ok ok I just wanted to look cool on twitter smh")))));
 };
 
 const Footer = () => {
-    const count = Count.use();
+    const count = Count.$use();
     return F._jsx("div", null,
         "Copyright \u00A9",
         2024 + count,
@@ -1004,7 +1032,7 @@ const RerenderAction = (props, ctx) => {
 };
 
 const RerenderStatus = (props) => {
-    const count = Count.use();
+    const count = Count.$use();
     return F._jsx("span", null,
         "This page has been rerendered ",
         count,
@@ -1013,13 +1041,16 @@ const RerenderStatus = (props) => {
 
 const LogStore = Store.create([]);
 const RerenderLog = () => {
-    const log = LogStore.provide();
+    const log = LogStore.$provide();
     // This is a huge hack since we don't have effects yet
     if (!window.hasHooked) {
         window.hasHooked = true;
         __HOOK__("expansion_new", (root) => {
             if (root.element !== RerenderLog) {
                 console.log(root.element.name);
+                // We can't actually change state while inside of a hook, because we're mid render
+                // at this point so we'll update the state but then get marked as clean
+                // In the future i'd like for renderers to be able to make state changes, but that's low pri
                 setTimeout(() => log.set((log) => [
                     ...log,
                     `Rerendered ${new Date().toLocaleTimeString()}: ${root.element.name};`,
@@ -1041,7 +1072,7 @@ const RerenderLog = () => {
 
 const Count = Store.create(0);
 const App = (props) => {
-    const count = Count.provide();
+    const count = Count.$provide();
     const cachedCountValue = count.getValue();
     const onClick = () => {
         console.log("Previous count:", cachedCountValue);

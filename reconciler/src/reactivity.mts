@@ -149,7 +149,7 @@ export abstract class BaseStore<Data> {
         this.default = default_;
     }
 
-    public provide(): StateContainer<Data> {
+    public $provide(): StateContainer<Data> {
         const element = e.currentContext!;
         if (!e.stateMap.has(element)) {
             e.stateMap.set(element, new Map());

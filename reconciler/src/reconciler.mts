@@ -83,18 +83,25 @@ const reconcileChildren = (children: ExpansionDomChild[], context: Context): Rec
 
         let newNode: Hydrate;
         if (child.kind === "dom-element") {
+            const isClean = !child.dirty && previousChild.kind === "dom-element";
+
             const parent: NodeHydrate = {
                 kind: "node",
                 parent: context.parent,
                 previous: previousChild?.node,
                 from: child,
                 right: rightSibling,
+                node: isClean ? previousChild.node.node : undefined,
             };
 
             const flatChildren = fullyFlattenExpansion(child.children);
             const previousChildren = previousChild?.kind === "dom-element" ? previousChild.children : undefined;
 
-            context.updateSchedule.push(parent);
+            if (!isClean) {
+                // Only bother re-processing if something changed
+                context.updateSchedule.push(parent);
+            }
+
             const newChild = reconcileChildren(flatChildren, {
                 parent,
                 updateSchedule: context.updateSchedule,

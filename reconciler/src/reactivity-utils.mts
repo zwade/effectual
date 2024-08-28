@@ -1,7 +1,7 @@
 import { BaseStore } from "./reactivity.mjs";
 
 export class Store<Data> extends BaseStore<Data> {
-    public use(): Data {
+    public $use(): Data {
         const container = this.useContainer();
         if (container) {
             return container.getValue();
@@ -18,7 +18,7 @@ export class Store<Data> extends BaseStore<Data> {
 }
 
 export class AssignableStore<Data> extends BaseStore<Data> {
-    public use(): [Data, (value: Data) => void] {
+    public $use(): [Data, (value: Data) => void] {
         const container = this.useContainer();
         if (container) {
             return [container.getValue(), container.setValue.bind(container)];

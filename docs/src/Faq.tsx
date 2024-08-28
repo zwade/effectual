@@ -28,6 +28,14 @@ export const Faq = () => {
                 </a>
                 !
             </FaqItem>
+            <FaqItem $slot:title="Why did you make it?">
+                As a way to both understand better how modern web frameworks work, and to help convey that knowledge to
+                others.
+                <FaqItem $slot:title="Ok but why did you realllllly make it?">
+                    Uhhhhh, I thought it would be a fun way to give back to the community
+                    <FaqItem $slot:title="...">Ok ok I just wanted to look cool on twitter smh</FaqItem>
+                </FaqItem>
+            </FaqItem>
         </>
     );
 };

@@ -14,7 +14,7 @@ export interface Props {}
 export const Count = Store.create(0);
 
 export const App = (props: Props) => {
-    const count = Count.provide();
+    const count = Count.$provide();
 
     const cachedCountValue = count.getValue();
     const onClick = () => {
@@ -31,6 +31,7 @@ export const App = (props: Props) => {
             <Faq />
 
             <h2>Reactivity Test</h2>
+
             <RerenderAction className="test-button" $on:click={onClick} $slot:cta={<b>Click to re-render</b>}>
                 <RerenderStatus />
             </RerenderAction>

@@ -28,6 +28,7 @@ export type ExpansionEntry =
           memoKey: MemoEntry;
           element: NativeElement;
           children: ExpansionChild[];
+          dirty: boolean;
       }
     | {
           kind: "child";
@@ -148,6 +149,7 @@ const expandClean = (element: ExpansionEntry, context: Context): ExpansionEntry 
             memoKey: element.memoKey,
             element: element.element,
             children: element.children.map(([key, child]) => [key, expandClean(child, context)]),
+            dirty: false,
         };
     }
 
@@ -299,6 +301,7 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
                 const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
                 return [key, expandDirty(child, { ...context, previousRoot: extantChild })];
             }),
+            dirty: true,
         };
     }
 

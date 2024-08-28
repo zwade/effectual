@@ -7,18 +7,18 @@ interface Slots {
 }
 
 export const FaqItem = (_props: {}, ctx: F.Ctx<{ slots: Slots }>) => {
-    const shown = Shown.provide();
+    const shown = Shown.$provide();
 
     return (
-        <div style={{ marginBottom: "1rem", marginLeft: "1rem", cursor: "pointer" }}>
-            <div
-                open={shown.getValue()}
-                $on:click={(e) => {
-                    shown.set((val) => !val);
-                    e.preventDefault();
-                }}
-            >
-                <h3 style={{ display: "inline-block" }}>
+        <div style={{ marginBottom: "1rem", marginLeft: "1rem" }}>
+            <div>
+                <h3
+                    style={{ display: "inline-block", cursor: "pointer" }}
+                    $on:click={(e) => {
+                        shown.set((val) => !val);
+                        e.preventDefault();
+                    }}
+                >
                     {shown.getValue() ? "⬇" : "⮕"} {ctx.slots.title}
                 </h3>
 

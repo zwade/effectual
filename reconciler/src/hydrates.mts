@@ -108,6 +108,11 @@ const setAttribute = (element: HTContentNode, key: string, value: unknown, previ
 };
 
 export const createHydrate = (hydrate: NodeHydrate, context: HydrateContext) => {
+    if (__DEV__) {
+        __LOG__("info", "create_hydrate", hydrate);
+        __TRIGGER__("create_hydrate", hydrate, context);
+    }
+
     const element = context.target.createElement(hydrate.from.element.tag);
     const props = hydrate.from.element.props ?? {};
 
@@ -126,6 +131,11 @@ export const updateHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
         hydrate.previous = undefined;
         createHydrate(hydrate, context);
     } else {
+        if (__DEV__) {
+            __LOG__("info", "update_hydrate", hydrate);
+            __TRIGGER__("update_hydrate", hydrate, context);
+        }
+
         const existingSet = hydrate.previous.from.element.props ?? {};
         const newSet = hydrate.from.element.props ?? {};
         const element = hydrate.previous.node!;
@@ -156,6 +166,11 @@ export const updateHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
 };
 
 export const createTextHydrate = (hydrate: TextHydrate, context: HydrateContext) => {
+    if (__DEV__) {
+        __LOG__("info", "creating_text_hydrate", hydrate);
+        __TRIGGER__("create_text_hydrate", hydrate, context);
+    }
+
     const element = context.target.createTextNode(hydrate.from.value);
     insertSelf(hydrate, element);
 };
@@ -166,6 +181,11 @@ export const updateTextHydrate = (hydrate: TextHydrate, context: HydrateContext)
         hydrate.previous = undefined;
         createTextHydrate(hydrate, context);
     } else {
+        if (__DEV__) {
+            __LOG__("info", "update_text_hydrate", hydrate);
+            __TRIGGER__("update_text_hydrate", hydrate, context);
+        }
+
         const element = hydrate.previous.node!;
         if (hydrate.previous.from.value !== hydrate.from.value) {
             element.textContent = hydrate.from.value;

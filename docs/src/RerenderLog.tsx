@@ -3,7 +3,7 @@ import { F, Store } from "@effectualjs/core";
 const LogStore = Store.create<string[]>([]);
 
 export const RerenderLog = () => {
-    const log = LogStore.provide();
+    const log = LogStore.$provide();
 
     // This is a huge hack since we don't have effects yet
     if (!(window as any).hasHooked) {
@@ -11,6 +11,9 @@ export const RerenderLog = () => {
         __HOOK__("expansion_new", (root) => {
             if (root.element !== RerenderLog) {
                 console.log(root.element.name);
+                // We can't actually change state while inside of a hook, because we're mid render
+                // at this point so we'll update the state but then get marked as clean
+                // In the future i'd like for renderers to be able to make state changes, but that's low pri
                 setTimeout(
                     () =>
                         log.set((log) => [
