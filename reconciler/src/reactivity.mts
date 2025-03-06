@@ -1,5 +1,6 @@
 import { EffectualSlotElement } from "./elements.mjs";
 import { GenerationalMap } from "./generational-map.mjs";
+import { MemoEntry, memoItemsAreEqual, memoizeItem } from "./memo.mjs";
 
 declare global {
     interface EffectualState {
@@ -7,7 +8,9 @@ declare global {
         currentStateContext: CurrentState | null;
         stateMap: WeakMap<SelfIdentity, Map<StoreIdentity, _StateContainer<any>>>;
         dependencyMap: WeakMap<SelfIdentity, Set<StateIdentity>>;
-        elementCache: WeakMap<SelfIdentity, ElementCache>;
+        effectCache: WeakMap<SelfIdentity, ElementCache<BaseEffectContainer>>;
+        currentEffect: LifecycleEffectContainer | null;
+        effectCount: number;
         dirtySet: Set<StateIdentity>;
         isDirty: boolean;
         _devIdCounter: number;
@@ -19,10 +22,14 @@ e.currentContext = null;
 e.currentStateContext = null;
 e.stateMap = new WeakMap();
 e.dependencyMap = new WeakMap();
-e.elementCache = new WeakMap();
+e.effectCache = new WeakMap();
+e.currentEffect = null;
+e.effectCount = 0;
 e.dirtySet = new Set();
 e.isDirty = false;
 e._devIdCounter = 0;
+
+export { e };
 
 export type CurrentState = GenerationalMap<StoreIdentity, _StateContainer<any>>;
 
@@ -30,13 +37,16 @@ export type CurrentState = GenerationalMap<StoreIdentity, _StateContainer<any>>;
 export type SelfIdentity = { __brand: "Self identity" };
 export type StateIdentity = { __brand: "State identity" };
 export type StoreIdentity = { __brand: "Store identity" };
+export type EffectIdentity = { __brand: "Effect identity" };
 
-const generateDevId = <T extends SelfIdentity | StateIdentity | StoreIdentity>() => {
+export type Identity = SelfIdentity | StateIdentity | StoreIdentity | EffectIdentity;
+
+const generateDevId = <T extends Identity>() => {
     e._devIdCounter += 1;
     return { id: e._devIdCounter } as unknown as T;
 };
 
-export const getNewIdentity = <T extends SelfIdentity | StateIdentity | StoreIdentity>() => {
+export const getNewIdentity = <T extends Identity>() => {
     if (__DEV__) {
         return generateDevId<T>();
     }
@@ -44,8 +54,12 @@ export const getNewIdentity = <T extends SelfIdentity | StateIdentity | StoreIde
     return Object.create(null) as T;
 };
 
-export const setCurrentContext = (id: SelfIdentity | null) => {
+export const resetCurrentContext = (id: SelfIdentity | null) => {
     e.currentContext = id;
+
+    if (id) {
+        e.effectCount = 0;
+    }
 };
 
 export const needsRerender = () => {
@@ -85,36 +99,63 @@ export const resetDirtyState = () => {
     e.isDirty = false;
 };
 
-export const reconcileEmits = (id: SelfIdentity, emits: Record<string, unknown> | undefined) => {
+export const requestOrderBasedId = () => {
+    const id = `$effect:${e.effectCount}`;
+    e.effectCount += 1;
+
+    return id;
+};
+
+export const cleanupEffects = () => {
+    if (e.effectCache.has(e.currentContext!)) {
+        const cache = e.effectCache.get(e.currentContext!)!;
+
+        for (const [key, effect] of cache) {
+            if (!effect.executed) {
+                effect.cleanup();
+                cache.remove(key);
+            } else {
+                effect.executed = false;
+            }
+        }
+    }
+};
+
+export const finalCleanup = (identity: SelfIdentity) => {
+    const cache = e.effectCache.get(identity);
+    if (cache) {
+        for (const [, effect] of cache) {
+            effect.cleanup();
+        }
+    }
+
+    e.effectCache.delete(identity);
+};
+
+export const reconcileEmits = (id: SelfIdentity, emits: Record<string, Function> | undefined) => {
     if (!emits) {
         return;
     }
 
-    if (!e.elementCache.has(id)) {
-        e.elementCache.set(id, new ElementCache());
+    if (!e.effectCache.has(id)) {
+        e.effectCache.set(id, new ElementCache());
     }
 
-    const cache = e.elementCache.get(id)!;
+    const cache = e.effectCache.get(id)!;
     const result: Record<string, unknown> = Object.create(null);
 
     for (const key in emits) {
-        result[key] = (...args: unknown[]) => {
-            const fn = cache.getLatest(key) as Function;
-            if (__DEV__) {
-                if (!fn) {
-                    throw new Error(`Unable to find emit: ${key}`);
-                }
+        if (!cache.has(key)) {
+            cache.add(key, new EmitEffectContainer());
+        }
 
-                if (args.length > fn.length) {
-                    __LOG__("warn", `Received ${args.length} arguments but expected ${fn.length}`);
-                }
-            }
+        const container = cache.getLatest(key)! as EmitEffectContainer;
+        result[key] = container.cachedFn;
 
-            return fn?.(...args);
-        };
+        container.lastResult = emits[key];
+        container.executed = true;
     }
 
-    cache.update(emits);
     return result;
 };
 
@@ -212,6 +253,10 @@ class _StateContainer<T> {
     }
 
     public getValue() {
+        if (e.currentEffect) {
+            e.currentEffect.addDependency(this.#stateId);
+        }
+
         return this.#currentValue;
     }
 
@@ -242,6 +287,10 @@ export class StateContainer<T> {
         this.#base = container;
     }
 
+    public get value() {
+        return this.getValue();
+    }
+
     public getValue() {
         return this.#base.getValue();
     }
@@ -255,19 +304,173 @@ export class StateContainer<T> {
     }
 }
 
-export class ElementCache {
-    #current: Record<string, unknown>;
+export class ElementCache<Data = unknown> {
+    #current: Record<string, Data>;
 
     constructor() {
         this.#current = {};
+    }
+
+    public has(key: string) {
+        // eslint-disable-next-line no-prototype-builtins
+        return this.#current.hasOwnProperty(key);
     }
 
     public getLatest(key: string) {
         return this.#current[key];
     }
 
-    public update(values: Record<string, unknown>) {
-        this.#current = values;
+    public merge(values: Record<string, Data>) {
+        for (const [key, value] of Object.entries(values)) {
+            this.#current[key] = value;
+        }
+    }
+
+    public add(key: string, value: Data) {
+        this.#current[key] = value;
+    }
+
+    public remove(key: string) {
+        delete this.#current[key];
+    }
+
+    public [Symbol.iterator]() {
+        return Object.entries(this.#current)[Symbol.iterator]();
+    }
+}
+
+export function effectWatch<Data, Args extends any[]>(
+    key: string,
+    fn: (...args: Args) => Generator<Data, void> | Data,
+    args: Args,
+    options: RunEffectOptions,
+) {
+    if (!e.effectCache.has(e.currentContext!)) {
+        e.effectCache.set(e.currentContext!, new ElementCache());
+    }
+
+    const cache = e.effectCache.get(e.currentContext!)!;
+
+    let effect: LifecycleEffectContainer;
+    if (!cache.has(key)) {
+        effect = new LifecycleEffectContainer(fn);
+        cache.add(key, effect);
+        effect.run(args, options);
+    } else {
+        effect = cache.getLatest(key)! as LifecycleEffectContainer;
+
+        if (effect.isDirty(args)) {
+            effect.run(args, options);
+        }
+    }
+
+    effect.executed = true;
+
+    return effect.lastResult as Data;
+}
+
+export interface RunEffectOptions {
+    dontWatch?: boolean;
+}
+
+export abstract class BaseEffectContainer {
+    public lastResult: unknown;
+    public executed = false;
+
+    public abstract cleanup(): void;
+}
+
+export class EmitEffectContainer extends BaseEffectContainer {
+    public cachedFn;
+
+    constructor() {
+        super();
+
+        this.cachedFn = (...args: unknown[]) => {
+            const fn = this.lastResult as Function;
+            if (__DEV__) {
+                if (args.length > fn.length) {
+                    __LOG__("warn", `Received ${args.length} arguments but expected ${fn.length}`);
+                }
+            }
+
+            return fn?.(...args);
+        };
+    }
+
+    public cleanup() {
+        // Nothing to do
+    }
+}
+
+export class LifecycleEffectContainer extends BaseEffectContainer {
+    #dependencies = new Set<StateIdentity>();
+    #cleanup: (() => void) | undefined;
+    #fn;
+    #previousArgs: MemoEntry | undefined;
+
+    constructor(fn: (...args: any[]) => Generator<unknown, void> | unknown) {
+        super();
+
+        this.#fn = fn;
+        this.lastResult = undefined;
+        this.#previousArgs = undefined;
+    }
+
+    public isDirty(args: any[]) {
+        const newArgs = memoizeItem(args);
+        const argsChanged = !this.#previousArgs || !memoItemsAreEqual(this.#previousArgs, newArgs);
+        const dependencyChanged = [...this.#dependencies].some((dep) => e.dirtySet.has(dep));
+
+        return argsChanged || dependencyChanged;
+    }
+
+    public addDependency(state: StateIdentity) {
+        this.#dependencies.add(state);
+    }
+
+    public run(args: any[], options: RunEffectOptions) {
+        this.#dependencies = new Set();
+        this.#previousArgs = memoizeItem(args);
+
+        try {
+            if (this.#cleanup) {
+                this.#cleanup();
+                this.#cleanup = undefined;
+            }
+
+            if (!options.dontWatch) {
+                e.currentEffect = this;
+            }
+
+            const result = this.#fn(...args) as Generator<number, void> | number; // We use `number` kind of arbitrarily here so the types are reasonable-ish
+            if (result && typeof result === "object" && typeof result["next"] === "function") {
+                const generatorResult = result.next();
+                this.lastResult = generatorResult.value;
+
+                if (!generatorResult.done) {
+                    this.#cleanup = () => {
+                        try {
+                            result.next();
+                        } catch (e) {
+                            __LOG__("warn", "Cleanup failed", e);
+                        }
+                    };
+                }
+            } else {
+                this.lastResult = result;
+            }
+        } catch (e) {
+            __LOG__("warn", "Effect failed", e);
+        } finally {
+            e.currentEffect = null;
+        }
+    }
+
+    public cleanup() {
+        if (this.#cleanup) {
+            this.#cleanup();
+        }
     }
 }
 

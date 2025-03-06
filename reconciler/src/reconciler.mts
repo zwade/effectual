@@ -77,13 +77,15 @@ const reconcileChildren = (children: ExpansionDomChild[], context: Context): Rec
     let rightSibling: Hydrate | undefined = undefined;
     const newChildren: ReconciliationChild[] = [];
 
-    for (const [key, child] of children.slice().reverse()) {
-        const previousChild = previousElementsByKey[key];
+    for (let i = children.length - 1; i >= 0; i--) {
+        const [key, child] = children[i];
+
+        const previousChild = previousElementsByKey[key] as ReconciliationEntry | undefined;
         delete previousElementsByKey[key];
 
         let newNode: Hydrate;
         if (child.kind === "dom-element") {
-            const isClean = !child.dirty && previousChild.kind === "dom-element";
+            const isClean = !child.dirty && previousChild?.kind === "dom-element";
 
             const parent: NodeHydrate = {
                 kind: "node",
@@ -91,7 +93,7 @@ const reconcileChildren = (children: ExpansionDomChild[], context: Context): Rec
                 previous: previousChild?.node,
                 from: child,
                 right: rightSibling,
-                node: isClean ? previousChild.node.node : undefined,
+                node: isClean ? previousChild?.node.node : undefined,
             };
 
             const flatChildren = fullyFlattenExpansion(child.children);

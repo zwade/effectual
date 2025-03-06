@@ -1,5 +1,5 @@
 import { expand, F, reconcile, ReconciliationChild, RootHydrate } from "@effectualjs/core";
-import { ExpansionEntry } from "@effectualjs/reconciler/dist/expansion.mjs";
+import type { ExpansionEntry } from "@effectualjs/reconciler/dist/expansion.mjs";
 
 import { App } from "./App.js";
 

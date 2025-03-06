@@ -9,15 +9,17 @@ import {
 } from "./elements.mjs";
 import { MemoEntry, memoItemsAreEqual, memoizeItem } from "./memo.mjs";
 import {
+    cleanupEffects,
+    finalCleanup,
     getNewIdentity,
     isElementDirty,
     popCurrentStateContext,
     pushCurrentStateContext,
     reconcileEmits,
+    resetCurrentContext,
     resetDependencyState,
     resetDirtyState,
     SelfIdentity,
-    setCurrentContext,
     SlotGenerator,
 } from "./reactivity.mjs";
 
@@ -104,6 +106,80 @@ const flattenElements = (entry: EffectualElement[], acc: FlatElement[] = [], cur
     }
 
     return acc;
+};
+
+export const childrenCompatible = (child: SingletonElement, oldChild: ExpansionEntry) => {
+    if (typeof child !== "object") {
+        return oldChild.kind === "text-node";
+    }
+
+    if (child === null) {
+        return oldChild.kind === "omit";
+    }
+
+    return (
+        (child.kind === "custom" && oldChild.kind === "child") ||
+        (child.kind === "native" && oldChild.kind === "dom-element") ||
+        (child.kind === "slot" && oldChild.kind === "slot-portal")
+    );
+};
+
+/**
+ * Takes the newly generated list of children and the previous list
+ * and breaks it into two pieces:
+ * `reconciledChildren` - The children that have been preserved from the previous expansion
+ * `unreconciledChildren` - The children that no longer exist from the previous expansion
+ */
+export const partitionChildren = (element: EffectualElement, oldChildren: ExpansionChild[] = []) => {
+    const flatChildren = flattenElement(element);
+    const oldChildrenLookup = Object.fromEntries(oldChildren);
+
+    const reconciledChildren = flatChildren.map(([key, child]) => {
+        const foundChild = oldChildrenLookup[key];
+        let oldChild: ExpansionEntry | undefined = undefined;
+
+        if (foundChild && childrenCompatible(child, foundChild)) {
+            oldChild = foundChild;
+            delete oldChildrenLookup[key];
+        }
+
+        return [key, child, oldChild] as [string, SingletonElement, ExpansionEntry | undefined];
+    });
+
+    const unreconciledChildren = Object.entries(oldChildrenLookup);
+
+    return { reconciledChildren, unreconciledChildren };
+};
+
+const deallocateElement = (element: ExpansionEntry) => {
+    switch (element.kind) {
+        case "dom-element": {
+            for (const [, child] of element.children) {
+                deallocateElement(child);
+            }
+
+            break;
+        }
+        case "child": {
+            for (const [, child] of element.result) {
+                deallocateElement(child);
+            }
+
+            finalCleanup(element.identity);
+            break;
+        }
+        case "slot-portal": {
+            for (const [, child] of element.result) {
+                deallocateElement(child);
+            }
+
+            break;
+        }
+        case "omit":
+        case "text-node": {
+            break;
+        }
+    }
 };
 
 /**
@@ -257,19 +333,29 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
         }
 
         if (__DEV__) {
-            __LOG__("debug", "Instantiating", currentRoot);
+            __LOG__("debug", "Instantiating", currentRoot, previousRoot);
             __TRIGGER__("expansion_new", currentRoot, context);
         }
 
-        setCurrentContext(identity);
+        resetCurrentContext(identity);
         pushCurrentStateContext(identity);
 
         let instantiation: EffectualElement;
         try {
             const emits = reconcileEmits(identity, currentRoot.emits);
             instantiation = currentRoot.element(currentRoot.props ?? {}, { emits, slots: SlotGenerator });
+            cleanupEffects();
+        } catch (e) {
+            __LOG__("error", e as any);
+            instantiation = null;
         } finally {
-            setCurrentContext(null);
+            resetCurrentContext(null);
+        }
+
+        const { reconciledChildren, unreconciledChildren } = partitionChildren(instantiation, oldChildren);
+
+        for (const [_key, child] of unreconciledChildren) {
+            deallocateElement(child);
         }
 
         const result: ExpansionEntry = {
@@ -277,8 +363,7 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
             element: currentRoot,
             identity,
             memoKey: memoizeItem(currentRoot.props),
-            result: flattenElement(instantiation).map(([key, child]) => {
-                const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
+            result: reconciledChildren.map(([key, child, extantChild]) => {
                 return [key, expandDirty(child, { previousRoot: extantChild, lexicalScopeStack: newStack })];
             }),
         };
@@ -293,12 +378,17 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
             oldChildren = previousRoot.children;
         }
 
+        const { reconciledChildren, unreconciledChildren } = partitionChildren(currentRoot.children, oldChildren);
+
+        for (const [_key, child] of unreconciledChildren) {
+            deallocateElement(child);
+        }
+
         return {
             kind: "dom-element",
             memoKey: memoizeItem(currentRoot.props),
             element: currentRoot,
-            children: flattenElement(currentRoot.children).map(([key, child]) => {
-                const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
+            children: reconciledChildren.map(([key, child, extantChild]) => {
                 return [key, expandDirty(child, { ...context, previousRoot: extantChild })];
             }),
             dirty: true,
@@ -315,12 +405,16 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
         const contextWasClean = context.lexicalScopeStack[0].clean;
         const newStack = context.lexicalScopeStack.slice(1);
 
+        const { reconciledChildren, unreconciledChildren } = partitionChildren(children, oldChildren);
+
+        for (const [_key, child] of unreconciledChildren) {
+            deallocateElement(child);
+        }
+
         return {
             kind: "slot-portal",
             element: currentRoot,
-            result: flattenElement(children).map(([key, child]) => {
-                const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
-
+            result: reconciledChildren.map(([key, child, extantChild]) => {
                 if (__DEV__) {
                     if (contextWasClean) {
                         __ASSERT__(extantChild !== undefined, "A clean context should not be able to rewire children");

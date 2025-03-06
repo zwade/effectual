@@ -16,7 +16,7 @@ const memoizeSingleObject = (value: unknown) => {
  * In the event that the values are objects, we cache them
  * in weak references to avoid memory leaks.
  */
-export const memoizeItem = (props?: Record<string, unknown>) => {
+export const memoizeItem = (props?: Record<string, unknown> | unknown[]) => {
     const cacheObject: MemoEntry = [];
     if (props === undefined) {
         return cacheObject;
@@ -24,7 +24,7 @@ export const memoizeItem = (props?: Record<string, unknown>) => {
 
     const keys = Object.keys(props).sort((a, b) => a.localeCompare(b));
     for (const key of keys) {
-        const value = props[key];
+        const value = (props as Record<string, unknown>)[key];
         cacheObject.push([key, memoizeSingleObject(value)]);
     }
 
@@ -48,14 +48,12 @@ export const memoItemsAreEqual = (a: MemoEntry, b: MemoEntry) => {
         const aValue = a[i][1];
         const bValue = b[i][1];
 
-        if (aValue !== bValue) {
-            return false;
-        }
-
         if (aValue instanceof WeakRef && bValue instanceof WeakRef) {
             if (aValue.deref() !== bValue.deref() || aValue.deref() === undefined) {
                 return false;
             }
+        } else if (aValue !== bValue) {
+            return false;
         }
     }
 

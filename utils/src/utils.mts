@@ -11,5 +11,6 @@
  * ```
  */
 export const unreachable = (value: never): never => {
+    console.warn("Unreachable", value);
     throw new Error(`Unreachable: ${value}`);
 };

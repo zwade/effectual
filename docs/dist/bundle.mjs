@@ -113,6 +113,7 @@ if (__DEV__) {
  * ```
  */
 const unreachable = (value) => {
+    console.warn("Unreachable", value);
     throw new Error(`Unreachable: ${value}`);
 };
 
@@ -155,13 +156,13 @@ const memoItemsAreEqual = (a, b) => {
         }
         const aValue = a[i][1];
         const bValue = b[i][1];
-        if (aValue !== bValue) {
-            return false;
-        }
         if (aValue instanceof WeakRef && bValue instanceof WeakRef) {
             if (aValue.deref() !== bValue.deref() || aValue.deref() === undefined) {
                 return false;
             }
+        }
+        else if (aValue !== bValue) {
+            return false;
         }
     }
     return true;
@@ -205,7 +206,9 @@ e.currentContext = null;
 e.currentStateContext = null;
 e.stateMap = new WeakMap();
 e.dependencyMap = new WeakMap();
-e.elementCache = new WeakMap();
+e.effectCache = new WeakMap();
+e.currentEffect = null;
+e.effectCount = 0;
 e.dirtySet = new Set();
 e.isDirty = false;
 e._devIdCounter = 0;
@@ -219,8 +222,11 @@ const getNewIdentity = () => {
     }
     return Object.create(null);
 };
-const setCurrentContext = (id) => {
+const resetCurrentContext = (id) => {
     e.currentContext = id;
+    if (id) {
+        e.effectCount = 0;
+    }
 };
 const pushCurrentStateContext = (id) => {
     if (!e.currentStateContext) {
@@ -248,30 +254,52 @@ const resetDirtyState = () => {
     e.dirtySet = new Set();
     e.isDirty = false;
 };
+const requestOrderBasedId = () => {
+    const id = `$effect:${e.effectCount}`;
+    e.effectCount += 1;
+    return id;
+};
+const cleanupEffects = () => {
+    if (e.effectCache.has(e.currentContext)) {
+        const cache = e.effectCache.get(e.currentContext);
+        for (const [key, effect] of cache) {
+            if (!effect.executed) {
+                effect.cleanup();
+                cache.remove(key);
+            }
+            else {
+                effect.executed = false;
+            }
+        }
+    }
+};
+const finalCleanup = (identity) => {
+    const cache = e.effectCache.get(identity);
+    if (cache) {
+        for (const [, effect] of cache) {
+            effect.cleanup();
+        }
+    }
+    e.effectCache.delete(identity);
+};
 const reconcileEmits = (id, emits) => {
     if (!emits) {
         return;
     }
-    if (!e.elementCache.has(id)) {
-        e.elementCache.set(id, new ElementCache());
+    if (!e.effectCache.has(id)) {
+        e.effectCache.set(id, new ElementCache());
     }
-    const cache = e.elementCache.get(id);
+    const cache = e.effectCache.get(id);
     const result = Object.create(null);
     for (const key in emits) {
-        result[key] = (...args) => {
-            const fn = cache.getLatest(key);
-            if (__DEV__) {
-                if (!fn) {
-                    throw new Error(`Unable to find emit: ${key}`);
-                }
-                if (args.length > fn.length) {
-                    __LOG__("warn", `Received ${args.length} arguments but expected ${fn.length}`);
-                }
-            }
-            return fn?.(...args);
-        };
+        if (!cache.has(key)) {
+            cache.add(key, new EmitEffectContainer());
+        }
+        const container = cache.getLatest(key);
+        result[key] = container.cachedFn;
+        container.lastResult = emits[key];
+        container.executed = true;
     }
-    cache.update(emits);
     return result;
 };
 const isElementDirty = (id) => {
@@ -350,6 +378,9 @@ class _StateContainer {
         }
     }
     getValue() {
+        if (e.currentEffect) {
+            e.currentEffect.addDependency(this.#stateId);
+        }
         return this.#currentValue;
     }
     getNextValue() {
@@ -373,6 +404,9 @@ class StateContainer {
     constructor(container) {
         this.#base = container;
     }
+    get value() {
+        return this.getValue();
+    }
     getValue() {
         return this.#base.getValue();
     }
@@ -388,11 +422,131 @@ class ElementCache {
     constructor() {
         this.#current = {};
     }
+    has(key) {
+        // eslint-disable-next-line no-prototype-builtins
+        return this.#current.hasOwnProperty(key);
+    }
     getLatest(key) {
         return this.#current[key];
     }
-    update(values) {
-        this.#current = values;
+    merge(values) {
+        for (const [key, value] of Object.entries(values)) {
+            this.#current[key] = value;
+        }
+    }
+    add(key, value) {
+        this.#current[key] = value;
+    }
+    remove(key) {
+        delete this.#current[key];
+    }
+    [Symbol.iterator]() {
+        return Object.entries(this.#current)[Symbol.iterator]();
+    }
+}
+function effectWatch(key, fn, args, options) {
+    if (!e.effectCache.has(e.currentContext)) {
+        e.effectCache.set(e.currentContext, new ElementCache());
+    }
+    const cache = e.effectCache.get(e.currentContext);
+    let effect;
+    if (!cache.has(key)) {
+        effect = new LifecycleEffectContainer(fn);
+        cache.add(key, effect);
+        effect.run(args, options);
+    }
+    else {
+        effect = cache.getLatest(key);
+        if (effect.isDirty(args)) {
+            effect.run(args, options);
+        }
+    }
+    effect.executed = true;
+    return effect.lastResult;
+}
+class BaseEffectContainer {
+    lastResult;
+    executed = false;
+}
+class EmitEffectContainer extends BaseEffectContainer {
+    cachedFn;
+    constructor() {
+        super();
+        this.cachedFn = (...args) => {
+            const fn = this.lastResult;
+            if (__DEV__) {
+                if (args.length > fn.length) {
+                    __LOG__("warn", `Received ${args.length} arguments but expected ${fn.length}`);
+                }
+            }
+            return fn?.(...args);
+        };
+    }
+    cleanup() {
+        // Nothing to do
+    }
+}
+class LifecycleEffectContainer extends BaseEffectContainer {
+    #dependencies = new Set();
+    #cleanup;
+    #fn;
+    #previousArgs;
+    constructor(fn) {
+        super();
+        this.#fn = fn;
+        this.lastResult = undefined;
+        this.#previousArgs = undefined;
+    }
+    isDirty(args) {
+        const newArgs = memoizeItem(args);
+        const argsChanged = !this.#previousArgs || !memoItemsAreEqual(this.#previousArgs, newArgs);
+        const dependencyChanged = [...this.#dependencies].some((dep) => e.dirtySet.has(dep));
+        return argsChanged || dependencyChanged;
+    }
+    addDependency(state) {
+        this.#dependencies.add(state);
+    }
+    run(args, options) {
+        this.#dependencies = new Set();
+        this.#previousArgs = memoizeItem(args);
+        try {
+            if (this.#cleanup) {
+                this.#cleanup();
+                this.#cleanup = undefined;
+            }
+            if (!options.dontWatch) {
+                e.currentEffect = this;
+            }
+            const result = this.#fn(...args); // We use `number` kind of arbitrarily here so the types are reasonable-ish
+            if (result && typeof result === "object" && typeof result["next"] === "function") {
+                const generatorResult = result.next();
+                this.lastResult = generatorResult.value;
+                if (!generatorResult.done) {
+                    this.#cleanup = () => {
+                        try {
+                            result.next();
+                        }
+                        catch (e) {
+                            __LOG__("warn", "Cleanup failed", e);
+                        }
+                    };
+                }
+            }
+            else {
+                this.lastResult = result;
+            }
+        }
+        catch (e) {
+            __LOG__("warn", "Effect failed", e);
+        }
+        finally {
+            e.currentEffect = null;
+        }
+    }
+    cleanup() {
+        if (this.#cleanup) {
+            this.#cleanup();
+        }
     }
 }
 const SlotGenerator = new Proxy({}, {
@@ -444,6 +598,61 @@ const flattenElements = (entry, acc = [], currentPosition = 0) => {
         acc.push([`__static_${currentPosition + i}`, element]);
     }
     return acc;
+};
+const childrenCompatible = (child, oldChild) => {
+    if (typeof child !== "object") {
+        return oldChild.kind === "text-node";
+    }
+    if (child === null) {
+        return oldChild.kind === "omit";
+    }
+    return ((child.kind === "custom" && oldChild.kind === "child") ||
+        (child.kind === "native" && oldChild.kind === "dom-element") ||
+        (child.kind === "slot" && oldChild.kind === "slot-portal"));
+};
+/**
+ * Takes the newly generated list of children and the previous list
+ * and breaks it into two pieces:
+ * `reconciledChildren` - The children that have been preserved from the previous expansion
+ * `unreconciledChildren` - The children that no longer exist from the previous expansion
+ */
+const partitionChildren = (element, oldChildren = []) => {
+    const flatChildren = flattenElement(element);
+    const oldChildrenLookup = Object.fromEntries(oldChildren);
+    const reconciledChildren = flatChildren.map(([key, child]) => {
+        const foundChild = oldChildrenLookup[key];
+        let oldChild = undefined;
+        if (foundChild && childrenCompatible(child, foundChild)) {
+            oldChild = foundChild;
+            delete oldChildrenLookup[key];
+        }
+        return [key, child, oldChild];
+    });
+    const unreconciledChildren = Object.entries(oldChildrenLookup);
+    return { reconciledChildren, unreconciledChildren };
+};
+const deallocateElement = (element) => {
+    switch (element.kind) {
+        case "dom-element": {
+            for (const [, child] of element.children) {
+                deallocateElement(child);
+            }
+            break;
+        }
+        case "child": {
+            for (const [, child] of element.result) {
+                deallocateElement(child);
+            }
+            finalCleanup(element.identity);
+            break;
+        }
+        case "slot-portal": {
+            for (const [, child] of element.result) {
+                deallocateElement(child);
+            }
+            break;
+        }
+    }
 };
 /**
  * Invokes `flattenElements` on a single element (casing on whether it's)
@@ -573,26 +782,34 @@ const expandDirty = (currentRoot, context) => {
             identity = getNewIdentity();
         }
         if (__DEV__) {
-            __LOG__("debug", "Instantiating", currentRoot);
+            __LOG__("debug", "Instantiating", currentRoot, previousRoot);
             __TRIGGER__("expansion_new", currentRoot, context);
         }
-        setCurrentContext(identity);
+        resetCurrentContext(identity);
         pushCurrentStateContext(identity);
         let instantiation;
         try {
             const emits = reconcileEmits(identity, currentRoot.emits);
             instantiation = currentRoot.element(currentRoot.props ?? {}, { emits, slots: SlotGenerator });
+            cleanupEffects();
+        }
+        catch (e) {
+            __LOG__("error", e);
+            instantiation = null;
         }
         finally {
-            setCurrentContext(null);
+            resetCurrentContext(null);
+        }
+        const { reconciledChildren, unreconciledChildren } = partitionChildren(instantiation, oldChildren);
+        for (const [_key, child] of unreconciledChildren) {
+            deallocateElement(child);
         }
         const result = {
             kind: "child",
             element: currentRoot,
             identity,
             memoKey: memoizeItem(currentRoot.props),
-            result: flattenElement(instantiation).map(([key, child]) => {
-                const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
+            result: reconciledChildren.map(([key, child, extantChild]) => {
                 return [key, expandDirty(child, { previousRoot: extantChild, lexicalScopeStack: newStack })];
             }),
         };
@@ -604,12 +821,15 @@ const expandDirty = (currentRoot, context) => {
         if (previousRoot && previousRoot.kind === "dom-element") {
             oldChildren = previousRoot.children;
         }
+        const { reconciledChildren, unreconciledChildren } = partitionChildren(currentRoot.children, oldChildren);
+        for (const [_key, child] of unreconciledChildren) {
+            deallocateElement(child);
+        }
         return {
             kind: "dom-element",
             memoKey: memoizeItem(currentRoot.props),
             element: currentRoot,
-            children: flattenElement(currentRoot.children).map(([key, child]) => {
-                const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
+            children: reconciledChildren.map(([key, child, extantChild]) => {
                 return [key, expandDirty(child, { ...context, previousRoot: extantChild })];
             }),
             dirty: true,
@@ -623,11 +843,14 @@ const expandDirty = (currentRoot, context) => {
         const children = context.lexicalScopeStack[0].element.children[currentRoot.name ?? "default"];
         const contextWasClean = context.lexicalScopeStack[0].clean;
         const newStack = context.lexicalScopeStack.slice(1);
+        const { reconciledChildren, unreconciledChildren } = partitionChildren(children, oldChildren);
+        for (const [_key, child] of unreconciledChildren) {
+            deallocateElement(child);
+        }
         return {
             kind: "slot-portal",
             element: currentRoot,
-            result: flattenElement(children).map(([key, child]) => {
-                const extantChild = oldChildren ? oldChildren.find(([k]) => k === key)?.[1] : undefined;
+            result: reconciledChildren.map(([key, child, extantChild]) => {
                 if (__DEV__) {
                     if (contextWasClean) {
                         __ASSERT__(extantChild !== undefined, "A clean context should not be able to rewire children");
@@ -833,6 +1056,10 @@ class Store extends BaseStore {
         return new Store(default_);
     }
 }
+function $effect(fn, args = []) {
+    const id = requestOrderBasedId();
+    return effectWatch(id, fn, args, { dontWatch: true });
+}
 
 const fullyFlattenExpansion = (children, keyPrefix = "", acc = []) => {
     for (let i = 0; i < children.length; i++) {
@@ -861,19 +1088,20 @@ const reconcileChildren = (children, context) => {
     }
     let rightSibling = undefined;
     const newChildren = [];
-    for (const [key, child] of children.slice().reverse()) {
+    for (let i = children.length - 1; i >= 0; i--) {
+        const [key, child] = children[i];
         const previousChild = previousElementsByKey[key];
         delete previousElementsByKey[key];
         let newNode;
         if (child.kind === "dom-element") {
-            const isClean = !child.dirty && previousChild.kind === "dom-element";
+            const isClean = !child.dirty && previousChild?.kind === "dom-element";
             const parent = {
                 kind: "node",
                 parent: context.parent,
                 previous: previousChild?.node,
                 from: child,
                 right: rightSibling,
-                node: isClean ? previousChild.node.node : undefined,
+                node: isClean ? previousChild?.node.node : undefined,
             };
             const flatChildren = fullyFlattenExpansion(child.children);
             const previousChildren = previousChild?.kind === "dom-element" ? previousChild.children : undefined;
@@ -943,151 +1171,87 @@ const reconcile = (entry, rootHydrate, target, previousRun) => {
     return children;
 };
 
-const Blog = () => {
-    return (F._jsx(F._fragment, null,
-        F._jsx("h2", null, "Blog Posts"),
-        F._jsx("ul", null,
-            F._jsx("li", null,
-                F._jsx("a", { href: "https://dttw.tech/posts/WPLtwgai6", target: "_blank" }, "Part 0: Build your own Framework")),
-            F._jsx("li", null,
-                F._jsx("a", { href: "https://dttw.tech/posts/Bn_yOwnTo", target: "_blank" }, "Part 1: Rend(er) me Asunder")))));
-};
-
-const Shown = Store.create(false);
-const FaqItem = (_props, ctx) => {
-    const shown = Shown.$provide();
-    return (F._jsx("div", { style: { marginBottom: "1rem", marginLeft: "1rem" } },
-        F._jsx("div", null,
-            F._jsx("h3", { style: { display: "inline-block", cursor: "pointer" }, "$on:click": (e) => {
-                    shown.set((val) => !val);
-                    e.preventDefault();
-                } },
-                shown.getValue() ? "⬇" : "⮕",
-                " ",
-                ctx.slots.title),
-            shown.getValue() ? (F._jsx("div", null,
-                F._jsx("slot", null))) : null)));
-};
-
-const Faq = () => {
-    return (F._jsx(F._fragment, null,
-        F._jsx("h2", null, "FAQ"),
-        F._jsx(FaqItem, { "$slot:title": F._jsx("span", null,
-                "Was this site ",
-                F._jsx("i", null, "really"),
-                " made with Effectual?") }, "Yep! Effectual is being built piecemeal, and with every new version of the framework comes a new version of this site to show off what it can do!"),
-        F._jsx(FaqItem, { "$slot:title": "So what can it do?" }, "Uhhhh \u2014 this? Look it's a web page!"),
-        F._jsx(FaqItem, { "$slot:title": "Why's it so ugly?" },
-            "Ah yes well, I haven't added CSS support yet.",
-            " ",
-            F._jsx("sub", null, "Also it probably wouldn't look much better with it")),
-        F._jsx(FaqItem, { "$slot:title": "How can I get started playing around with it?" },
-            "Check out the github repository at",
-            " ",
-            F._jsx("a", { href: "https://github.com/zwade/effectual", target: "_blank" }, "github.com/zwade/effectual"),
-            "!"),
-        F._jsx(FaqItem, { "$slot:title": "Why did you make it?" },
-            "As a way to both understand better how modern web frameworks work, and to help convey that knowledge to others.",
-            F._jsx(FaqItem, { "$slot:title": "Ok but why did you realllllly make it?" },
-                "Uhhhhh, I thought it would be a fun way to give back to the community",
-                F._jsx(FaqItem, { "$slot:title": "..." }, "Ok ok I just wanted to look cool on twitter smh")))));
-};
-
-const Footer = () => {
-    const count = Count.$use();
-    return F._jsx("div", null,
-        "Copyright \u00A9",
-        2024 + count,
-        " Zach Wade");
-};
-
-const Header = () => {
-    return (F._jsx(F._fragment, null,
-        F._jsx("h1", null, "Effectual Web Development"),
-        F._jsx("hr", null),
-        "This site was made with ",
-        F._jsx("a", { href: "https://github.com/zwade/effectual" }, "Effectual JS"),
-        ", an educational (and functional!) web development framework."));
-};
-
-const ProgressItem = (props) => {
-    return (F._jsx("div", { style: "margin-left: 1rem; margin-bottom: 0.25rem;" },
-        F._jsx("input", { type: "checkbox", checked: props.complete, disabled: true }),
-        F._jsx("slot", null)));
-};
-const Progress = () => (F._jsx(F._fragment, null,
-    F._jsx("h2", null, "Effectual Progress"),
-    F._jsx(ProgressItem, { complete: true }, "Render Engine"),
-    F._jsx(ProgressItem, { complete: true }, "Reconciler"),
-    F._jsx(ProgressItem, { complete: true }, "Reactivity Engine"),
-    F._jsx(ProgressItem, null, "Effect Support"),
-    F._jsx(ProgressItem, null, "Style Support"),
-    F._jsx(ProgressItem, null, "Data Loading")));
-
-const RerenderAction = (props, ctx) => {
-    return (F._jsx("div", { class: `${props.className ?? ""} rerender-action` },
-        F._jsx("slot", null),
-        F._jsx("button", { "$on:click": () => ctx.emits.click?.() },
-            F._jsx("slot", { name: "cta" }))));
-};
-
-const RerenderStatus = (props) => {
-    const count = Count.$use();
-    return F._jsx("span", null,
-        "This page has been rerendered ",
-        count,
-        " times. ");
-};
-
-const LogStore = Store.create([]);
-const RerenderLog = () => {
-    const log = LogStore.$provide();
-    // This is a huge hack since we don't have effects yet
-    if (!window.hasHooked) {
-        window.hasHooked = true;
-        __HOOK__("expansion_new", (root) => {
-            if (root.element !== RerenderLog) {
-                console.log(root.element.name);
-                // We can't actually change state while inside of a hook, because we're mid render
-                // at this point so we'll update the state but then get marked as clean
-                // In the future i'd like for renderers to be able to make state changes, but that's low pri
-                setTimeout(() => log.set((log) => [
-                    ...log,
-                    `Rerendered ${new Date().toLocaleTimeString()}: ${root.element.name};`,
-                ]), 0);
-            }
-        });
+const Hash = Store.create();
+const Raw = (props) => {
+    if (typeof props.element === "string") {
+        return props.element;
     }
+    const children = (props.element.children ?? []).map((el) => F._jsx(Raw, { element: el }));
+    return createElement(props.element.tag, props.element.attrs, children);
+};
+const Markdown = (props) => {
+    const html = $effect((markdown) => {
+        return { tag: "div", children: [`parsed: ${markdown}`] };
+    }, [props.markdown]);
+    return F._jsx(Raw, { element: html });
+};
+const Abusable = (props) => {
+    const formattedTime = $effect((timestamp) => {
+        return new Date(timestamp).toLocaleString(undefined, {
+            month: "long",
+            day: "numeric",
+            hour12: true,
+            hour: "numeric",
+            minute: "numeric",
+        });
+    }, [props.timestamp]);
     return (F._jsx("div", null,
-        F._jsx("h3", null, "Rerender Log"),
-        F._jsx("div", { style: {
-                height: "10rem",
-                border: "1px solid black",
-                borderRadius: "8px",
-                overflow: "scroll",
-                marginBottom: "1rem",
-            } },
-            F._jsx("div", { style: { display: "flex", flexFlow: "column-reverse", padding: "0.5rem" } }, log.getValue().map((value, i) => (F._jsx("div", { key: i }, value)))))));
+        F._jsx("div", null,
+            "Time: ",
+            formattedTime),
+        F._jsx(Markdown, { markdown: props.markdown })));
+};
+const $hashState = () => {
+    const hash = Hash.$provide();
+    $effect(function* () {
+        const cb = () => {
+            hash.setValue(location.hash);
+        };
+        window.addEventListener("hashchange", cb);
+        yield;
+        window.removeEventListener("hashchange", cb);
+    });
+    return hash.value;
+};
+const AbuseParent = (props) => {
+    const hash = $hashState();
+    return (F._jsx("div", null,
+        props.spec.map((spec) => (F._jsx(Abusable, { ...spec }))),
+        "Hash: ",
+        hash));
+};
+const exploit = [
+    {
+        key: "dupe",
+        "$on:$effect:0": {
+            kind: "native",
+            tag: "div",
+            props: {},
+            children: [
+                "pwned",
+                {
+                    kind: "native",
+                    tag: "img",
+                    props: { src: "", onerror: "alert('pwned')" },
+                },
+            ],
+        },
+        timestamp: "05-03-2025",
+        markdown: "same",
+    },
+    { key: "dupe", markdown: "same", timestamp: "05-03-2025", otherProps: "hi" },
+];
+const Bugs = () => {
+    return (F._jsx(F._fragment, null,
+        F._jsx(AbuseParent, { spec: exploit })));
 };
 
-const Count = Store.create(0);
+document.head.appendChild(document.createElement("style")).textContent="body, html {\n    font-family: sans-serif;\n}";
+
+Store.create(0);
 const App = (props) => {
-    const count = Count.$provide();
-    const cachedCountValue = count.getValue();
-    const onClick = () => {
-        console.log("Previous count:", cachedCountValue);
-        count.setValue(count.getValue() + 1);
-    };
-    return (F._jsx("div", { style: "font-family: sans-serif;" },
-        F._jsx(Header, null),
-        F._jsx(Blog, null),
-        F._jsx(Progress, null),
-        F._jsx(Faq, null),
-        F._jsx("h2", null, "Reactivity Test"),
-        F._jsx(RerenderAction, { className: "test-button", "$on:click": onClick, "$slot:cta": F._jsx("b", null, "Click to re-render") },
-            F._jsx(RerenderStatus, null)),
-        F._jsx(RerenderLog, null),
-        F._jsx(Footer, null)));
+    return (F._jsx("div", null,
+        F._jsx(Bugs, null)));
 };
 
 const buildReconciliationLoop = (rootEl) => {
