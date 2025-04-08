@@ -4,7 +4,15 @@
     "type": "module",
     "main": "dist/index.mjs",
     "types": "dist/index.d.mts",
-    "r": {},
+    "r": {
+        "docs:build": "rollup -c rollup.config.mjs",
+        "docs:watch": "rollup -c rollup.config.mjs --watch",
+        "docs:serve": "python3 -m http.server 2020",
+        "docs:start": [
+            "r:docs:watch",
+            "r:docs:serve"
+        ]
+    },
     "dependencies": {
         "@effectualjs/core": "workspace:*"
     },
