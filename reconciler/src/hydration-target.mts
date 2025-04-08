@@ -10,6 +10,7 @@ export interface HTBaseNode<T extends HTNode<T> = OpaqueHTNode> {
 }
 
 export interface HTContentNode<T extends HTNode<T> = OpaqueHTNode> extends HTBaseNode<T> {
+    tagName: string;
     insertBefore(content: T, rightNode: T | null): void;
     appendChild(content: T): void;
     removeChild(content: T): void;
@@ -18,6 +19,7 @@ export interface HTContentNode<T extends HTNode<T> = OpaqueHTNode> extends HTBas
     addEventListener(eventName: string, callback: () => void): void;
     removeEventListener(eventName: string, callback: () => void): void;
     style: HTCSSStyleDeclaration<T>;
+    children: Iterable<T>;
 }
 
 export interface HTTextNode<T extends HTNode<T> = OpaqueHTNode> extends HTBaseNode<T> {

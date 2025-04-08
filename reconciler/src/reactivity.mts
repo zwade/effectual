@@ -134,7 +134,7 @@ export const finalCleanup = (identity: SelfIdentity) => {
 
 export const reconcileEmits = (id: SelfIdentity, emits: Record<string, Function> | undefined) => {
     if (!emits) {
-        return;
+        return {};
     }
 
     if (!e.effectCache.has(id)) {
@@ -244,6 +244,7 @@ class _StateContainer<T> {
 
     public setValue(value: T) {
         this.#nextValue = value;
+
         if (!this.#dirty) {
             e.dirtySet.add(this.#stateId);
 
@@ -255,6 +256,14 @@ class _StateContainer<T> {
     public getValue() {
         if (e.currentEffect) {
             e.currentEffect.addDependency(this.#stateId);
+        }
+
+        if (e.currentContext) {
+            if (!e.dependencyMap.has(e.currentContext)) {
+                e.dependencyMap.set(e.currentContext, new Set());
+            }
+
+            e.dependencyMap.get(e.currentContext)?.add(this.#stateId);
         }
 
         return this.#currentValue;
@@ -472,6 +481,49 @@ export class LifecycleEffectContainer extends BaseEffectContainer {
             this.#cleanup();
         }
     }
+}
+
+export interface SimpleStateOptions<T> {
+    default?: T;
+}
+
+export const createSimpleState = <T,>(key: string, options: SimpleStateOptions<T>) => {
+    if (!e.effectCache.has(e.currentContext!)) {
+        e.effectCache.set(e.currentContext!, new ElementCache());
+    }
+
+    const cache = e.effectCache.get(e.currentContext!)!;
+
+    let effect: SimpleStateEffect;
+    if (!cache.has(key)) {
+        effect = new SimpleStateEffect(options.default);
+        cache.add(key, effect);
+    } else {
+        effect = cache.getLatest(key)! as SimpleStateEffect;
+    }
+
+    if (!e.stateMap.has(e.currentContext!)) {
+        e.stateMap.set(e.currentContext!, new Map());
+    }
+
+    e.stateMap.get(e.currentContext!)?.set(effect.storeId, effect.stateContainer);
+
+    effect.executed = true;
+
+    return new StateContainer<T>(effect.stateContainer as _StateContainer<T>);
+};
+
+export class SimpleStateEffect extends BaseEffectContainer {
+    public storeId;
+    public stateContainer;
+
+    public constructor(def_: unknown) {
+        super();
+        this.storeId = getNewIdentity<StoreIdentity>();
+        this.stateContainer = new _StateContainer(def_);
+    }
+
+    public cleanup() {}
 }
 
 export const SlotGenerator = new Proxy({} as Record<string, EffectualSlotElement>, {

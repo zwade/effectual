@@ -23,6 +23,11 @@ export const render = (entry: ExpansionEntry): string => {
         return entry.result.map(([_key, value]) => render(value)).join("");
     }
 
+    if (entry.kind === "teleport") {
+        const children = entry.children.map(([_key, value]) => render(value)).join("");
+        return `<portal>${children}</portal>`;
+    }
+
     if (entry.kind === "dom-element") {
         const children = entry.children.map(([_key, value]) => render(value)).join("");
         const props = Object.entries(entry.element.props ?? {})

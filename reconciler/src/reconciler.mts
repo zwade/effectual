@@ -1,4 +1,4 @@
-import { NativeElement } from "./elements.mjs";
+import { EffectualPortalElement, NativeElement } from "./elements.mjs";
 import { ExpansionChild, ExpansionEntry } from "./expansion.mjs";
 import {
     deleteHydrate,
@@ -17,7 +17,7 @@ export type ReconciliationEntry =
     | {
           kind: "dom-element";
           memoKey: MemoEntry;
-          element: NativeElement;
+          element: NativeElement | EffectualPortalElement;
           children: ReconciliationChild[];
           node: NodeHydrate;
       }
@@ -34,7 +34,7 @@ interface Context {
     deletionSchedule: Hydrate[];
 }
 
-type ExpansionReconciliationAtom = ExpansionEntry & { kind: "dom-element" | "text-node" };
+type ExpansionReconciliationAtom = ExpansionEntry & { kind: "dom-element" | "text-node" | "teleport" };
 type ExpansionDomChild = [Key: string, Value: ExpansionReconciliationAtom];
 
 export const fullyFlattenExpansion = (
@@ -47,7 +47,8 @@ export const fullyFlattenExpansion = (
 
         switch (child.kind) {
             case "dom-element":
-            case "text-node": {
+            case "text-node":
+            case "teleport": {
                 acc.push([keyPrefix + key, child]);
                 break;
             }
@@ -83,64 +84,72 @@ const reconcileChildren = (children: ExpansionDomChild[], context: Context): Rec
         const previousChild = previousElementsByKey[key] as ReconciliationEntry | undefined;
         delete previousElementsByKey[key];
 
-        let newNode: Hydrate;
-        if (child.kind === "dom-element") {
-            const isClean = !child.dirty && previousChild?.kind === "dom-element";
+        let newNode: Hydrate | undefined = rightSibling;
+        switch (child.kind) {
+            case "teleport":
+            case "dom-element": {
+                const isClean = !child.dirty && previousChild?.kind === "dom-element";
 
-            const parent: NodeHydrate = {
-                kind: "node",
-                parent: context.parent,
-                previous: previousChild?.node,
-                from: child,
-                right: rightSibling,
-                node: isClean ? previousChild?.node.node : undefined,
-            };
+                const parent: NodeHydrate = {
+                    kind: "node",
+                    parent: context.parent,
+                    previous: previousChild?.node,
+                    from: child,
+                    right: rightSibling,
+                    node: isClean ? previousChild?.node.node : undefined,
+                };
 
-            const flatChildren = fullyFlattenExpansion(child.children);
-            const previousChildren = previousChild?.kind === "dom-element" ? previousChild.children : undefined;
+                const flatChildren = fullyFlattenExpansion(child.children);
+                const previousChildren = previousChild?.kind === "dom-element" ? previousChild.children : undefined;
 
-            if (!isClean) {
-                // Only bother re-processing if something changed
-                context.updateSchedule.push(parent);
+                if (!isClean) {
+                    // Only bother re-processing if something changed
+                    context.updateSchedule.push(parent);
+                }
+
+                const newChild = reconcileChildren(flatChildren, {
+                    parent,
+                    updateSchedule: context.updateSchedule,
+                    deletionSchedule: context.deletionSchedule,
+                    previousLevel: previousChildren,
+                });
+
+                newChildren.push([
+                    key,
+                    {
+                        kind: "dom-element",
+                        children: newChild,
+                        element: child.element,
+                        memoKey: child.memoKey,
+                        node: parent,
+                    },
+                ]);
+
+                if (child.kind === "dom-element") {
+                    newNode = parent;
+                }
+                break;
             }
+            case "text-node": {
+                newNode = {
+                    kind: "text",
+                    parent: context.parent,
+                    previous: previousChild?.node,
+                    from: child,
+                    right: rightSibling,
+                };
 
-            const newChild = reconcileChildren(flatChildren, {
-                parent,
-                updateSchedule: context.updateSchedule,
-                deletionSchedule: context.deletionSchedule,
-                previousLevel: previousChildren,
-            });
+                newChildren.push([
+                    key,
+                    {
+                        kind: "text-node",
+                        node: newNode,
+                    },
+                ]);
 
-            newChildren.push([
-                key,
-                {
-                    kind: "dom-element",
-                    children: newChild,
-                    element: child.element,
-                    memoKey: child.memoKey,
-                    node: parent,
-                },
-            ]);
-
-            newNode = parent;
-        } else {
-            newNode = {
-                kind: "text",
-                parent: context.parent,
-                previous: previousChild?.node,
-                from: child,
-                right: rightSibling,
-            };
-
-            newChildren.push([
-                key,
-                {
-                    kind: "text-node",
-                    node: newNode,
-                },
-            ]);
-
-            context.updateSchedule.push(newNode);
+                context.updateSchedule.push(newNode);
+                break;
+            }
         }
 
         rightSibling = newNode;

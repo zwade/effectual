@@ -1,4 +1,4 @@
-import { BaseStore, effectWatch, requestOrderBasedId } from "./reactivity.mjs";
+import { BaseStore, createSimpleState, effectWatch, requestOrderBasedId } from "./reactivity.mjs";
 
 export class Store<Data> extends BaseStore<Data> {
     public $use(): Data {
@@ -150,6 +150,13 @@ export function $watch<Data, Args extends any[]>(
 
     return effectWatch(id, fn, args, {});
 }
+
+export const $state = <Data,>(default_: Data) => {
+    const id = requestOrderBasedId();
+    const state = createSimpleState<Data>(id, { default: default_ });
+
+    return state;
+};
 
 export const $onMount = <Data,>(fn: () => Data) => {
     const id = requestOrderBasedId();

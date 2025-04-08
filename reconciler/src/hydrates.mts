@@ -12,7 +12,7 @@ export type BaseHydrate = {
 export type NodeHydrate = BaseHydrate & {
     kind: "node";
     node?: HTContentNode;
-    from: ExpansionEntry & { kind: "dom-element" };
+    from: ExpansionEntry & { kind: "dom-element" | "teleport" };
 };
 
 export type TextHydrate = BaseHydrate & {
@@ -87,8 +87,15 @@ const setAttribute = (element: HTContentNode, key: string, value: unknown, previ
         return;
     }
 
-    if (typeof value === "string" && !key.startsWith("$")) {
-        element.setAttribute(key, value);
+    if (element.tagName === "INPUT" && key === "value") {
+        // element.setAttribute("value", value) doesn't actually change the content of the element
+        // Note that this will fail for mock-target so it's going to mess up the test suite a bit
+        (element as any).value = value as string;
+        return;
+    }
+
+    if ((typeof value === "string" || typeof value === "number") && !key.startsWith("$")) {
+        element.setAttribute(key, value.toString());
         return;
     }
 
@@ -113,7 +120,13 @@ export const createHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
         __TRIGGER__("create_hydrate", hydrate, context);
     }
 
-    const element = context.target.createElement(hydrate.from.element.tag);
+    if (hydrate.from.element.kind === "portal") {
+        hydrate.node = hydrate.from.element.element as HTContentNode;
+        return;
+    }
+
+    const hydrateSrc = hydrate.from.element;
+    const element = context.target.createElement(hydrateSrc.tag);
     const props = hydrate.from.element.props ?? {};
 
     for (const key in props) {
@@ -126,7 +139,24 @@ export const createHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
 };
 
 export const updateHydrate = (hydrate: NodeHydrate, context: HydrateContext) => {
-    if (hydrate.previous?.kind !== "node" || hydrate.from.element.tag !== hydrate.previous.from.element.tag) {
+    if (hydrate.from.element.kind === "portal") {
+        hydrate.node = hydrate.from.element.element as HTContentNode;
+        if (hydrate.previous?.kind !== "node" || hydrate.previous.from.element.kind !== "portal") {
+            context.deletionSchedule.push(hydrate.previous!);
+            hydrate.previous = undefined;
+            createHydrate(hydrate, context);
+            return;
+        }
+
+        // Portals don't get updated
+        return;
+    }
+
+    if (
+        hydrate.previous?.kind !== "node" ||
+        hydrate.previous.from.kind !== "dom-element" ||
+        hydrate.from.element.tag !== hydrate.previous.from.element.tag
+    ) {
         context.deletionSchedule.push(hydrate.previous!);
         hydrate.previous = undefined;
         createHydrate(hydrate, context);
@@ -220,6 +250,18 @@ export const processHydrate = (hydrate: Hydrate, context: HydrateContext) => {
 
 export const deleteHydrate = (hydrate: Hydrate, _context: HydrateContext) => {
     if (hydrate.kind === "node" || hydrate.kind === "text") {
+        if (hydrate.from.kind === "teleport") {
+            // We're not allowed to delete the teleport node directly
+            // So instead we just delete its children
+            if (hydrate.kind === "node") {
+                for (const child of hydrate.node?.children ?? []) {
+                    hydrate.node?.removeChild(child);
+                }
+            }
+
+            return;
+        }
+
         hydrate.parent.node?.removeChild(hydrate.node!);
     }
 };

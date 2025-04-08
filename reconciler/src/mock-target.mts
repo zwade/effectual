@@ -31,12 +31,14 @@ export class MockHTContentNode extends MockHTBaseNode implements HTContentNode<M
 
     children: MockHTNode[];
     attributes: [key: string, value: string][];
+    tagName: string;
 
     constructor(tag: string) {
         super();
         this.tag = tag;
         this.children = [];
         this.attributes = [];
+        this.tagName = tag.toUpperCase();
     }
 
     public insertBefore(content: MockHTNode, rightNode: MockHTNode | null): void {

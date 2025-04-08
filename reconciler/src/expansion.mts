@@ -2,6 +2,7 @@ import { unreachable } from "@effectualjs/utils";
 
 import {
     EffectualElement,
+    EffectualPortalElement,
     EffectualSlotElement,
     EffectualSourceElement,
     NativeElement,
@@ -43,6 +44,13 @@ export type ExpansionEntry =
           kind: "slot-portal";
           element: EffectualSlotElement;
           result: ExpansionChild[];
+      }
+    | {
+          kind: "teleport";
+          memoKey: MemoEntry;
+          element: EffectualPortalElement;
+          children: ExpansionChild[];
+          dirty: boolean;
       }
     | { kind: "text-node"; value: string }
     | { kind: "omit" };
@@ -233,6 +241,10 @@ const expandClean = (element: ExpansionEntry, context: Context): ExpansionEntry 
         return expandDirty(element.element, { ...context, previousRoot: element });
     }
 
+    if (element.kind === "teleport") {
+        return expandDirty(element.element, { ...context, previousRoot: element });
+    }
+
     if (element.kind === "child") {
         const isDirty = isElementDirty(element.identity);
 
@@ -242,15 +254,21 @@ const expandClean = (element: ExpansionEntry, context: Context): ExpansionEntry 
 
         const newStack: LexicalScope[] = [{ element: element.element, clean: true }, ...context.lexicalScopeStack];
 
+        pushCurrentStateContext(element.identity);
+
+        const children = element.result.map(([key, child]): [string, ExpansionEntry] => {
+            const newContext: Context = { lexicalScopeStack: newStack, previousRoot: child };
+            return [key, expandClean(child, newContext)];
+        });
+
+        popCurrentStateContext();
+
         return {
             kind: "child",
             element: element.element,
             memoKey: element.memoKey,
             identity: element.identity,
-            result: element.result.map(([key, child]) => {
-                const newContext: Context = { lexicalScopeStack: newStack, previousRoot: child };
-                return [key, expandClean(child, newContext)];
-            }),
+            result: children,
         };
     }
 
@@ -417,7 +435,10 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
             result: reconciledChildren.map(([key, child, extantChild]) => {
                 if (__DEV__) {
                     if (contextWasClean) {
-                        __ASSERT__(extantChild !== undefined, "A clean context should not be able to rewire children");
+                        __ASSERT__(
+                            extantChild !== undefined || child === undefined,
+                            "A clean context should not be able to rewire children",
+                        );
                     }
                 }
 
@@ -426,6 +447,30 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
                 }
 
                 return [key, expandDirty(child, { lexicalScopeStack: newStack, previousRoot: extantChild })];
+            }),
+        };
+    }
+
+    if (currentRoot.kind === "portal") {
+        let oldChildren: ExpansionChild[] | undefined = undefined;
+        if (previousRoot && previousRoot.kind === "teleport") {
+            oldChildren = previousRoot.children;
+        }
+
+        const children = currentRoot.children;
+        const { reconciledChildren, unreconciledChildren } = partitionChildren(children, oldChildren);
+
+        for (const [_key, child] of unreconciledChildren) {
+            deallocateElement(child);
+        }
+
+        return {
+            kind: "teleport",
+            memoKey: memoizeItem(currentRoot.props),
+            dirty: true,
+            element: currentRoot,
+            children: reconciledChildren.map(([key, child, extantChild]) => {
+                return [key, expandDirty(child, { ...context, previousRoot: extantChild })];
             }),
         };
     }

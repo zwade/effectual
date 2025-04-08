@@ -42,11 +42,22 @@ export type EffectualSlotElement = {
     props?: Record<string, any>;
 };
 
+/**
+ * Portals allow teleporting elements to other sections of the dom
+ */
+export type EffectualPortalElement = {
+    kind: "portal";
+    element: unknown;
+    children: EffectualElement[];
+    props?: Record<string, any>;
+};
+
 export type MultiElement = EffectualFragment | EffectualElement[];
 export type SingletonElement =
     | NativeElement
     | EffectualSourceElement
     | EffectualSlotElement
+    | EffectualPortalElement
     | string
     | boolean
     | number
@@ -80,6 +91,11 @@ export function createElement(
     props: { name?: string },
     ...children: EffectualElement[]
 ): EffectualSlotElement;
+export function createElement(
+    tag: "portal",
+    props: { element: unknown },
+    ...children: EffectualElement[]
+): EffectualPortalElement;
 export function createElement<Tag extends keyof HTMLElementTagNameMap, Props extends Record<string, any>>(
     tag: Tag,
     props: KeyProps<Props> | null,
@@ -112,6 +128,15 @@ export function createElement(
             kind: "slot",
             name: attrs?.name ?? undefined,
             props: attrs ?? undefined,
+        };
+    }
+
+    if (tag === "portal") {
+        return {
+            kind: "portal",
+            element: attrs?.element,
+            props: undefined,
+            children,
         };
     }
 
@@ -182,13 +207,19 @@ export declare namespace F {
          * The structure of all native components.
          * This is not currently implemented.
          */
+        type ElementProps = Record<string, any> & {
+            "$on:click"?: (e: MouseEvent) => boolean | void;
+            "$on:mousedown"?: (e: MouseEvent) => boolean | void;
+            "$on:mouseup"?: (e: MouseEvent) => boolean | void;
+            class?: string;
+            style?: string | F.CSSStyles;
+        };
+
         type IntrinsicElements = {
-            [K in keyof HTMLElementTagNameMap]: Record<string, any> & {
-                "$on:click"?: (e: MouseEvent) => boolean | void;
-                "$on:mousedown"?: (e: MouseEvent) => boolean | void;
-                "$on:mouseup"?: (e: MouseEvent) => boolean | void;
-                class?: string;
-                style?: string | F.CSSStyles;
+            [K in keyof HTMLElementTagNameMap]: ElementProps;
+        } & {
+            portal: {
+                element: unknown;
             };
         };
 

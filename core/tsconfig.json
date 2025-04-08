@@ -1,9 +1,14 @@
 {
     "extends": "../tsconfig.json",
     "compilerOptions": {
-        "outDir": "./dist"
+        "outDir": "./dist",
+        "rootDir": "./src"
     },
     "include": [
         "src"
     ],
+    "references": [
+        { "path": "../utils" },
+        { "path": "../reconciler" }
+    ]
 }

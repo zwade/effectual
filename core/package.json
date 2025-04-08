@@ -5,8 +5,8 @@
     "main": "dist/index.mjs",
     "types": "dist/index.d.mts",
     "r": {
-        "core:build": "tsc",
-        "core:watch": "tsc -w"
+        "core:build": "tsc -b",
+        "core:watch": "tsc -wb"
     },
     "dependencies": {
         "@effectualjs/reconciler": "workspace:*",
