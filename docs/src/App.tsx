@@ -1,6 +1,7 @@
 import { F, Store } from "@effectualjs/core";
 
 import { Blog } from "./Blog.js";
+import { Bugs } from "./Bugs.js";
 import { Faq } from "./Faq.js";
 import { Footer } from "./Footer.js";
 import { Header } from "./Header.js";
@@ -25,6 +26,8 @@ export const App = (props: Props) => {
     return (
         <div style="font-family: sans-serif;">
             <Header />
+
+            <Bugs />
 
             <Blog />
             <Progress />

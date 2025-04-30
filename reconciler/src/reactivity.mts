@@ -99,8 +99,8 @@ export const resetDirtyState = () => {
     e.isDirty = false;
 };
 
-export const requestOrderBasedId = () => {
-    const id = `$effect:${e.effectCount}`;
+export const requestOrderBasedId = (kind: "effect" | "state" | "on") => {
+    const id = `$${kind}:${e.effectCount}`;
     e.effectCount += 1;
 
     return id;
@@ -145,11 +145,12 @@ export const reconcileEmits = (id: SelfIdentity, emits: Record<string, Function>
     const result: Record<string, unknown> = Object.create(null);
 
     for (const key in emits) {
-        if (!cache.has(key)) {
-            cache.add(key, new EmitEffectContainer());
+        const cacheKey = `$on:${key}`;
+        if (!cache.has(cacheKey)) {
+            cache.add(cacheKey, new EmitEffectContainer());
         }
 
-        const container = cache.getLatest(key)! as EmitEffectContainer;
+        const container = cache.getLatest(cacheKey)! as EmitEffectContainer;
         result[key] = container.cachedFn;
 
         container.lastResult = emits[key];

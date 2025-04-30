@@ -90,7 +90,7 @@ export function $effect<Data, Args extends any[]>(
     fn: (...args: Args) => Generator<Data, void> | Data,
     args: Args = [] as unknown as Args,
 ): Data {
-    const id = requestOrderBasedId();
+    const id = requestOrderBasedId("effect");
 
     return effectWatch(id, fn, args, { dontWatch: true });
 }
@@ -146,25 +146,25 @@ export function $watch<Data, Args extends any[]>(
     fn: (...args: Args) => Generator<Data, void> | Data,
     args: Args = [] as unknown as Args,
 ) {
-    const id = requestOrderBasedId();
+    const id = requestOrderBasedId("effect");
 
     return effectWatch(id, fn, args, {});
 }
 
 export const $state = <Data,>(default_: Data) => {
-    const id = requestOrderBasedId();
+    const id = requestOrderBasedId("effect");
     const state = createSimpleState<Data>(id, { default: default_ });
 
     return state;
 };
 
 export const $onMount = <Data,>(fn: () => Data) => {
-    const id = requestOrderBasedId();
+    const id = requestOrderBasedId("effect");
     return effectWatch(id, fn, [], {});
 };
 
 export const $onUnmount = (fn: () => void) => {
-    const id = requestOrderBasedId();
+    const id = requestOrderBasedId("effect");
 
     const effectFn = function* () {
         yield;

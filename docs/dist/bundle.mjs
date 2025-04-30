@@ -262,6 +262,11 @@ const resetDirtyState = () => {
     e.dirtySet = new Set();
     e.isDirty = false;
 };
+const requestOrderBasedId = () => {
+    const id = `$effect:${e.effectCount}`;
+    e.effectCount += 1;
+    return id;
+};
 const cleanupEffects = () => {
     if (e.effectCache.has(e.currentContext)) {
         const cache = e.effectCache.get(e.currentContext);
@@ -453,6 +458,26 @@ class ElementCache {
         return Object.entries(this.#current)[Symbol.iterator]();
     }
 }
+function effectWatch(key, fn, args, options) {
+    if (!e.effectCache.has(e.currentContext)) {
+        e.effectCache.set(e.currentContext, new ElementCache());
+    }
+    const cache = e.effectCache.get(e.currentContext);
+    let effect;
+    if (!cache.has(key)) {
+        effect = new LifecycleEffectContainer(fn);
+        cache.add(key, effect);
+        effect.run(args, options);
+    }
+    else {
+        effect = cache.getLatest(key);
+        if (effect.isDirty(args)) {
+            effect.run(args, options);
+        }
+    }
+    effect.executed = true;
+    return effect.lastResult;
+}
 class BaseEffectContainer {
     lastResult;
     executed = false;
@@ -474,6 +499,99 @@ class EmitEffectContainer extends BaseEffectContainer {
     cleanup() {
         // Nothing to do
     }
+}
+class LifecycleEffectContainer extends BaseEffectContainer {
+    #dependencies = new Set();
+    #cleanup;
+    #fn;
+    #previousArgs;
+    constructor(fn) {
+        super();
+        this.#fn = fn;
+        this.lastResult = undefined;
+        this.#previousArgs = undefined;
+    }
+    isDirty(args) {
+        const newArgs = memoizeItem(args);
+        const argsChanged = !this.#previousArgs || !memoItemsAreEqual(this.#previousArgs, newArgs);
+        const dependencyChanged = [...this.#dependencies].some((dep) => e.dirtySet.has(dep));
+        return argsChanged || dependencyChanged;
+    }
+    addDependency(state) {
+        this.#dependencies.add(state);
+    }
+    run(args, options) {
+        this.#dependencies = new Set();
+        this.#previousArgs = memoizeItem(args);
+        try {
+            if (this.#cleanup) {
+                this.#cleanup();
+                this.#cleanup = undefined;
+            }
+            if (!options.dontWatch) {
+                e.currentEffect = this;
+            }
+            const result = this.#fn(...args); // We use `number` kind of arbitrarily here so the types are reasonable-ish
+            if (result && typeof result === "object" && typeof result["next"] === "function") {
+                const generatorResult = result.next();
+                this.lastResult = generatorResult.value;
+                if (!generatorResult.done) {
+                    this.#cleanup = () => {
+                        try {
+                            result.next();
+                        }
+                        catch (e) {
+                            __LOG__("warn", "Cleanup failed", e);
+                        }
+                    };
+                }
+            }
+            else {
+                this.lastResult = result;
+            }
+        }
+        catch (e) {
+            __LOG__("warn", "Effect failed", e);
+        }
+        finally {
+            e.currentEffect = null;
+        }
+    }
+    cleanup() {
+        if (this.#cleanup) {
+            this.#cleanup();
+        }
+    }
+}
+const createSimpleState = (key, options) => {
+    if (!e.effectCache.has(e.currentContext)) {
+        e.effectCache.set(e.currentContext, new ElementCache());
+    }
+    const cache = e.effectCache.get(e.currentContext);
+    let effect;
+    if (!cache.has(key)) {
+        effect = new SimpleStateEffect(options.default);
+        cache.add(key, effect);
+    }
+    else {
+        effect = cache.getLatest(key);
+    }
+    if (!e.stateMap.has(e.currentContext)) {
+        e.stateMap.set(e.currentContext, new Map());
+    }
+    e.stateMap.get(e.currentContext)?.set(effect.storeId, effect.stateContainer);
+    effect.executed = true;
+    return new StateContainer(effect.stateContainer);
+};
+class SimpleStateEffect extends BaseEffectContainer {
+    storeId;
+    stateContainer;
+    constructor(def_) {
+        super();
+        this.storeId = getNewIdentity();
+        this.stateContainer = new _StateContainer(def_);
+    }
+    cleanup() { }
 }
 const SlotGenerator = new Proxy({}, {
     get(target, p) {
@@ -1042,6 +1160,15 @@ class Store extends BaseStore {
         return new Store(default_);
     }
 }
+function $effect(fn, args = []) {
+    const id = requestOrderBasedId();
+    return effectWatch(id, fn, args, { dontWatch: true });
+}
+const $state = (default_) => {
+    const id = requestOrderBasedId();
+    const state = createSimpleState(id, { default: default_ });
+    return state;
+};
 
 const fullyFlattenExpansion = (children, keyPrefix = "", acc = []) => {
     for (let i = 0; i < children.length; i++) {
@@ -1171,6 +1298,21 @@ const Blog = () => {
                 F._jsx("a", { href: "https://dttw.tech/posts/Bn_yOwnTo", target: "_blank" }, "Part 1: Rend(er) me Asunder")))));
 };
 
+const Bugs = () => {
+    const state = $state(0);
+    const onClick = () => {
+        state.set((val) => val + 1);
+    };
+    $effect(() => {
+        console.log("Rerendered");
+    });
+    return (F._jsx("div", null,
+        F._jsx("div", null,
+            F._jsx("div", { key: "1" }, "1"),
+            F._jsx("div", { key: "1" }, "2")),
+        F._jsx("button", { "$on:click": onClick }, "Trigger")));
+};
+
 const Shown = Store.create(false);
 const FaqItem = (_props, ctx) => {
     const shown = Shown.$provide();
@@ -1298,6 +1440,7 @@ const App = (props) => {
     };
     return (F._jsx("div", { style: "font-family: sans-serif;" },
         F._jsx(Header, null),
+        F._jsx(Bugs, null),
         F._jsx(Blog, null),
         F._jsx(Progress, null),
         F._jsx(Faq, null),
@@ -1307,6 +1450,8 @@ const App = (props) => {
         F._jsx(RerenderLog, null),
         F._jsx(Footer, null)));
 };
+
+document.head.appendChild(document.createElement("style")).textContent="body, html {\n    font-family: sans-serif;\n}";
 
 const buildReconciliationLoop = (rootEl) => {
     const root = {

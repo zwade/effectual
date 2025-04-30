@@ -3,6 +3,8 @@ import { ExpansionEntry } from "@effectualjs/reconciler/dist/expansion.mjs";
 
 import { App } from "./App.js";
 
+import "./index.css";
+
 declare global {
     interface HTMLCollection {
         [Symbol.iterator]: () => Iterator<HTMLElement>;
