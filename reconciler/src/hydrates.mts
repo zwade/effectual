@@ -7,6 +7,12 @@ export type BaseHydrate = {
     right?: Hydrate;
     previous?: Hydrate;
     from: ExpansionEntry;
+    /**
+     * The DOM node currently containing `node`. May differ from `parent.node`
+     * when an ancestor was recreated — lets us detect reparenting without
+     * touching the DOM. Kept in sync exclusively by `insertSelf`.
+     */
+    parentNode?: HTContentNode;
 };
 
 export type NodeHydrate = BaseHydrate & {
@@ -59,6 +65,7 @@ function insertSelf(hydrate: TextHydrate | NodeHydrate, element: HTNode): void {
     // Normally we would need to do some sort of double casing, but we know
     // from the function signature that this must be correct
     (hydrate as NodeHydrate).node = element as HTContentNode;
+    hydrate.parentNode = hydrate.parent.node;
 }
 
 const setAttribute = (element: HTContentNode, key: string, value: unknown, previousValue?: unknown) => {
@@ -184,8 +191,10 @@ export const updateHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
             }
         }
 
-        if (element.nextSibling !== (hydrate.right?.node ?? null)) {
-            hydrate.parent.node?.removeChild(element);
+        const needsReparent = hydrate.parentNode !== hydrate.parent.node;
+
+        if (needsReparent || element.nextSibling !== (hydrate.right?.node ?? null)) {
+            hydrate.parentNode?.removeChild(element);
 
             insertSelf(hydrate, element);
         }
@@ -219,12 +228,13 @@ export const updateTextHydrate = (hydrate: TextHydrate, context: HydrateContext)
         const element = hydrate.previous.node!;
         if (hydrate.previous.from.value !== hydrate.from.value) {
             element.textContent = hydrate.from.value;
+        }
 
-            if (element.nextSibling !== (hydrate.right?.node ?? null)) {
-                hydrate.parent.node?.removeChild(element);
+        const needsReparent = hydrate.parentNode !== hydrate.parent.node;
+        if (needsReparent || element.nextSibling !== (hydrate.right?.node ?? null)) {
+            hydrate.parentNode?.removeChild(element);
 
-                insertSelf(hydrate, element);
-            }
+            insertSelf(hydrate, element);
         }
 
         hydrate.node = element;

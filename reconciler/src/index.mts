@@ -1,5 +1,12 @@
-export { F as _F, createElement, EffectualSourceElement, fragmentId, NativeElement } from "./elements.mjs";
-export { expand } from "./expansion.mjs";
+export {
+    F as _F,
+    createElement,
+    EffectualElement,
+    EffectualSourceElement,
+    fragmentId,
+    NativeElement,
+} from "./elements.mjs";
+export { expand, ExpansionEntry } from "./expansion.mjs";
 export {
     BaseHydrate,
     createHydrate,

@@ -1,9 +1,10 @@
 {
     "name": "effectual",
-    "version": "1.0.0",
+    "version": "1.1.7",
     "packageManager": "yarn@4.8.1",
     "license": "MIT",
     "main": "lib/bundle.mjs",
+    "types": "lib/core/src/index.d.mts",
     "workspaces": [
         "core",
         "reconciler",
@@ -29,8 +30,12 @@
         "prettier": "^3.2.5",
         "rollup": "^4.18.0"
     },
+    "files": [
+        "lib",
+        "README.md"
+    ],
     "scripts": {
-        "prepublish": "yarn rollup -c"
+        "prepublish": "yarn r prepublish"
     },
     "r": {
         "build": [
@@ -44,6 +49,8 @@
             "r:reconciler:watch",
             "r:tests:watch",
             "r:utils:watch"
-        ]
+        ],
+        "fix-mts": "find lib -name '*.mts' -exec sed -r -i.old -e 's/@effectualjs\\/([^\"]+)/..\\/..\\/\\1\\/src\\/index\\.mjs/g' {} \\; && find lib -name '*.old' -delete",
+        "prepublish": "yarn r build && yarn rollup -c && yarn r fix-mts"
     }
 }

@@ -97,6 +97,7 @@ const reconcileChildren = (children: ExpansionDomChild[], context: Context): Rec
                     from: child,
                     right: rightSibling,
                     node: isClean ? previousChild?.node.node : undefined,
+                    parentNode: previousChild?.node?.parentNode,
                 };
 
                 const flatChildren = fullyFlattenExpansion(child.children);
@@ -137,6 +138,7 @@ const reconcileChildren = (children: ExpansionDomChild[], context: Context): Rec
                     previous: previousChild?.node,
                     from: child,
                     right: rightSibling,
+                    parentNode: previousChild?.node?.parentNode,
                 };
 
                 newChildren.push([

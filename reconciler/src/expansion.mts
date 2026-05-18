@@ -125,11 +125,15 @@ export const childrenCompatible = (child: SingletonElement, oldChild: ExpansionE
         return oldChild.kind === "omit";
     }
 
-    return (
-        (child.kind === "custom" && oldChild.kind === "child") ||
-        (child.kind === "native" && oldChild.kind === "dom-element") ||
-        (child.kind === "slot" && oldChild.kind === "slot-portal")
-    );
+    if (child.kind === "custom" && oldChild.kind === "child") {
+        child.element === oldChild.element.element;
+    }
+
+    if (child.kind === "native" && oldChild.kind === "dom-element") {
+        return child.tag === oldChild.element.tag;
+    }
+
+    return child.kind === "slot" && oldChild.kind === "slot-portal";
 };
 
 /**
@@ -327,16 +331,21 @@ const expandDirty = (currentRoot: SingletonElement, context: Context): Expansion
             }
 
             reconcileEmits(previousRoot.identity, currentRoot.emits);
+            pushCurrentStateContext(previousRoot.identity);
+
+            const children = previousRoot.result.map(([key, child]): [string, ExpansionEntry] => [
+                key,
+                expandClean(child, { previousRoot: child, lexicalScopeStack: newStack }),
+            ]);
+
+            popCurrentStateContext();
 
             return {
                 kind: "child",
                 element: currentRoot,
                 identity: previousRoot.identity,
                 memoKey: previousRoot.memoKey,
-                result: previousRoot.result.map(([key, child]) => [
-                    key,
-                    expandClean(child, { previousRoot: child, lexicalScopeStack: newStack }),
-                ]),
+                result: children,
             };
         }
 

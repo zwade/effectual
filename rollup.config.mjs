@@ -8,6 +8,12 @@ export default [
             file: "lib/bundle.mjs",
             format: "esm",
         },
-        plugins: [nodeResolve(), typescript({ outDir: "lib", include: ["./core/**/*.mts"] })],
+        plugins: [
+            nodeResolve(),
+            typescript({
+                outDir: "lib",
+                include: ["./core/**/*.mts", "./reconciler/**/*.mts", "./utils/**/*.mts"],
+            }),
+        ],
     },
 ];
