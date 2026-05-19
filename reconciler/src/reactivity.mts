@@ -11,6 +11,7 @@ declare global {
         effectCache: WeakMap<SelfIdentity, ElementCache<BaseEffectContainer>>;
         currentEffect: LifecycleEffectContainer | null;
         effectCount: number;
+        nextDirtySet: Set<StateIdentity>;
         dirtySet: Set<StateIdentity>;
         isDirty: boolean;
         _devIdCounter: number;
@@ -26,6 +27,7 @@ e.effectCache = new WeakMap();
 e.currentEffect = null;
 e.effectCount = 0;
 e.dirtySet = new Set();
+e.nextDirtySet = new Set();
 e.isDirty = false;
 e._devIdCounter = 0;
 
@@ -92,11 +94,12 @@ export const popCurrentStateContext = () => {
 
 export const resetDependencyState = () => {
     e.currentStateContext = new GenerationalMap();
+    e.dirtySet = e.nextDirtySet;
+    e.nextDirtySet = new Set();
 };
 
 export const resetDirtyState = () => {
-    e.dirtySet = new Set();
-    e.isDirty = false;
+    e.isDirty = e.nextDirtySet.size > 0;
 };
 
 export const requestOrderBasedId = (kind: "effect" | "state" | "on") => {
@@ -247,7 +250,7 @@ class _StateContainer<T> {
         this.#nextValue = value;
 
         if (!this.#dirty) {
-            e.dirtySet.add(this.#stateId);
+            e.nextDirtySet.add(this.#stateId);
 
             this.#dirty = true;
             e.isDirty = true;
