@@ -211,6 +211,26 @@ export abstract class BaseStore<Data> {
         return new StateContainer(container);
     }
 
+    /**
+     * This is a helper method for when you want to pass through data down from another source directly.
+     * This is effectively just a $provide with an $effect that updates the state when `data` changes.
+     */
+    public $provideWith<const Args extends any[]>(dataFn: (...args: Args) => Data, args: Args): StateContainer<Data> {
+        const container = this.$provide();
+
+        const effectKey = requestOrderBasedId("effect");
+        effectWatch(
+            effectKey,
+            (...args: Args) => {
+                container.setValue(dataFn(...args));
+            },
+            args,
+            { dontWatch: true },
+        );
+
+        return container;
+    }
+
     protected useContainer() {
         const container = e.currentStateContext?.get(this.id) as _StateContainer<Data> | undefined;
         const currentRenderer = e.currentContext;

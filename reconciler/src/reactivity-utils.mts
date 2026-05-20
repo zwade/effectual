@@ -82,11 +82,11 @@ export class AssignableStore<Data> extends BaseStore<Data> {
  * ```
  */
 export function $effect<Data>(fn: () => Generator<Data, void> | Data): Data;
-export function $effect<Data, Args extends any[]>(
+export function $effect<Data, const Args extends any[]>(
     fn: (...args: Args) => Generator<Data, void> | Data,
     args: Args,
 ): Data;
-export function $effect<Data, Args extends any[]>(
+export function $effect<Data, const Args extends any[]>(
     fn: (...args: Args) => Generator<Data, void> | Data,
     args: Args = [] as unknown as Args,
 ): Data {
@@ -100,12 +100,12 @@ export function $effect<Data, Args extends any[]>(
  * used in a conditional (or out of order) context.
  */
 export function $namedWatch<Data>(key: string, fn: () => Generator<Data, void> | Data): Data;
-export function $namedWatch<Data, Args extends any[]>(
+export function $namedWatch<Data, const Args extends any[]>(
     key: string,
     fn: (...args: Args) => Generator<Data, void> | Data,
     args: Args,
 ): Data;
-export function $namedWatch<Data, Args extends any[]>(
+export function $namedWatch<Data, const Args extends any[]>(
     key: string,
     fn: (...args: Args) => Generator<Data, void> | Data,
     args: Args = [] as unknown as Args,
