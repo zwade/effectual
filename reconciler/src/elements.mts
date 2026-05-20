@@ -211,6 +211,7 @@ export declare namespace F {
             "$on:click"?: (e: MouseEvent) => boolean | void;
             "$on:mousedown"?: (e: MouseEvent) => boolean | void;
             "$on:mouseup"?: (e: MouseEvent) => boolean | void;
+            "$on:ref"?: (el: HTMLElement | null) => void;
             class?: string;
             style?: string | F.CSSStyles;
         };

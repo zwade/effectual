@@ -37,7 +37,7 @@ export type Hydrate = NodeHydrate | TextHydrate | RootHydrate;
 export type HydrateContext = {
     target: HydrationTarget<any>;
     updateSchedule: Hydrate[];
-    deletionSchedule: Hydrate[];
+    deletionSchedule: [hydrate: Hydrate, shouldFireUnmount: boolean][];
 };
 
 function insertSelf(hydrate: TextHydrate, element: HTTextNode): void;
@@ -143,13 +143,20 @@ export const createHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
     }
 
     insertSelf(hydrate, element);
+
+    if (hydrate.kind === "node") {
+        const onRef = hydrate.from.element.props?.["$on:ref"];
+        if (typeof onRef === "function") {
+            onRef(element);
+        }
+    }
 };
 
 export const updateHydrate = (hydrate: NodeHydrate, context: HydrateContext) => {
     if (hydrate.from.element.kind === "portal") {
         hydrate.node = hydrate.from.element.element as HTContentNode;
         if (hydrate.previous?.kind !== "node" || hydrate.previous.from.element.kind !== "portal") {
-            context.deletionSchedule.push(hydrate.previous!);
+            context.deletionSchedule.push([hydrate.previous!, false]);
             hydrate.previous = undefined;
             createHydrate(hydrate, context);
             return;
@@ -164,7 +171,7 @@ export const updateHydrate = (hydrate: NodeHydrate, context: HydrateContext) => 
         hydrate.previous.from.kind !== "dom-element" ||
         hydrate.from.element.tag !== hydrate.previous.from.element.tag
     ) {
-        context.deletionSchedule.push(hydrate.previous!);
+        context.deletionSchedule.push([hydrate.previous!, false]);
         hydrate.previous = undefined;
         createHydrate(hydrate, context);
     } else {
@@ -216,7 +223,7 @@ export const createTextHydrate = (hydrate: TextHydrate, context: HydrateContext)
 
 export const updateTextHydrate = (hydrate: TextHydrate, context: HydrateContext) => {
     if (hydrate.previous?.kind !== "text") {
-        context.deletionSchedule.push(hydrate.previous!);
+        context.deletionSchedule.push([hydrate.previous!, false]);
         hydrate.previous = undefined;
         createTextHydrate(hydrate, context);
     } else {
@@ -258,7 +265,7 @@ export const processHydrate = (hydrate: Hydrate, context: HydrateContext) => {
     }
 };
 
-export const deleteHydrate = (hydrate: Hydrate, _context: HydrateContext) => {
+export const deleteHydrate = (hydrate: Hydrate, _context: HydrateContext, fireUnmount: boolean) => {
     if (hydrate.kind === "node" || hydrate.kind === "text") {
         if (hydrate.from.kind === "teleport") {
             // We're not allowed to delete the teleport node directly
@@ -273,5 +280,12 @@ export const deleteHydrate = (hydrate: Hydrate, _context: HydrateContext) => {
         }
 
         hydrate.parent.node?.removeChild(hydrate.node!);
+    }
+
+    if (fireUnmount && hydrate.kind === "node") {
+        const onRef = hydrate.from.element.props?.["$on:ref"];
+        if (typeof onRef === "function") {
+            onRef(null);
+        }
     }
 };

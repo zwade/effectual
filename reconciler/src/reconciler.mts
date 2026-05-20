@@ -31,7 +31,7 @@ interface Context {
     leftSibling?: Hydrate;
     previousLevel?: ReconciliationChild[];
     updateSchedule: Hydrate[];
-    deletionSchedule: Hydrate[];
+    deletionSchedule: [hydrate: Hydrate, shouldFireUnmount: boolean][];
 }
 
 type ExpansionReconciliationAtom = ExpansionEntry & { kind: "dom-element" | "text-node" | "teleport" };
@@ -158,7 +158,7 @@ const reconcileChildren = (children: ExpansionDomChild[], context: Context): Rec
     }
 
     for (const key in previousElementsByKey) {
-        context.deletionSchedule.push(previousElementsByKey[key].node);
+        context.deletionSchedule.push([previousElementsByKey[key].node, true]);
     }
 
     return newChildren;
@@ -171,7 +171,7 @@ export const reconcile = (
     previousRun?: ReconciliationChild[],
 ): ReconciliationChild[] => {
     const updateSchedule: Hydrate[] = [];
-    const deletionSchedule: Hydrate[] = [];
+    const deletionSchedule: [Hydrate, boolean][] = [];
 
     const children = reconcileChildren(fullyFlattenExpansion([["root", entry]]), {
         parent: rootHydrate,
@@ -188,7 +188,8 @@ export const reconcile = (
     }
 
     while (deletionSchedule.length > 0) {
-        deleteHydrate(deletionSchedule.shift()!, hydrateContext);
+        const [next, fireUnmount] = deletionSchedule.shift()!;
+        deleteHydrate(next, hydrateContext, fireUnmount);
     }
 
     return children;
